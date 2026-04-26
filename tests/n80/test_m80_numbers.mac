@@ -1,0 +1,18 @@
+; n80 test: M80 number formats — octal Q/O suffix and Intel X'...' hex
+    cseg
+    org 0100h
+
+; --- Octal suffix Q (already supported, confirming) ---
+    ld a, 12Q   ; 12 octal = 10 decimal = 0x0A
+    ld a, 377Q  ; 377 octal = 255 decimal = 0xFF
+    ld a, 12O   ; same as 12Q
+
+; --- Intel/IBM style hex X'...' ---
+    ld a, X'7F' ; 127 decimal
+    ld a, X'FF' ; 255 decimal
+    ld a, x'0A' ; lowercase x also accepted
+
+; --- Mixed in expressions ---
+    ld b, X'10' + 12Q ; 16 + 10 = 26 = 0x1A
+
+    end

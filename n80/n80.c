@@ -2222,11 +2222,20 @@ int eval(char *s)
 					else if (last_c == 'd') base = 10;
 					else if (last_c == 'o' || last_c == 'q') base = 8;
 					else if (last_c == 'b') base = 2;
-					
+
 					if (base != 10) end_p--; // Exclude suffix
-					
+
 					if (base == 16) i = eval_hex2i(s, end_p);
 					else i = eval_dec2i(s, end_p, base);
+				}
+				// Intel/IBM style hex literal: X'hexdigits' or x'hexdigits'
+				else if ((c == 'x' || c == 'X') && eval_cursor == s + 1 && *eval_cursor == '\'')
+				{
+					char *hex_start = (char *)eval_cursor + 1;
+					char *hex_end = hex_start;
+					while (*hex_end && *hex_end != '\'') hex_end++;
+					i = eval_hex2i(hex_start, hex_end);
+					eval_cursor = *hex_end == '\'' ? hex_end + 1 : hex_end;
 				}
 				else
 				{
