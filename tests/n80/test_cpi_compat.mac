@@ -1,0 +1,19 @@
+; n80 test: CPI M80 compatibility
+;   CPI n → always compare-immediate (0xFE n) when argument given
+;   CPI   → Z80 block CPI (0xED A1) only when no argument in Z80 mode
+
+; --- Z80 mode: CPI with argument (M80 style, no .8080 needed) ---
+    cpi 12Q     ; 0xFE 0x0A — compare immediate, octal arg
+    cpi X'7F'   ; 0xFE 0x7F — compare immediate, Intel hex arg
+    cpi 0FFh    ; 0xFE 0xFF — compare immediate, normal hex
+
+; --- Z80 mode: CPI without argument → Z80 block compare ---
+    cpi         ; 0xED 0xA1
+
+; --- 8080 mode: CPI with argument ---
+    .8080
+    cpi 12Q     ; 0xFE 0x0A
+    cpi 0FFh    ; 0xFE 0xFF
+    .z80
+
+    end

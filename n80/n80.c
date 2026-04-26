@@ -5042,8 +5042,9 @@ int assemble_opcode(int o, int oo) // 0 OK, !0 ERROR
 		}
 		break;
 	case OPCODE_8080_CPI:
-		// CPI: in 8080 mode = compare immediate (0xFE n); in Z80 mode = block CPI (0xEDA1)
-		if (current_cpu == CPU_8080) {
+		// CPI n  → 8080 compare immediate (0xFE n) when argument given or in 8080 mode
+		// CPI    → Z80 block CPI (0xED 0xA1) only when no argument and in Z80 mode
+		if (current_cpu == CPU_8080 || x == PARMTR_INTEGER) {
 			if (x != PARMTR_INTEGER) FATAL_PARMTR;
 			NEXTBYTE(0xFE);
 			NEXTBYTE(xx);
