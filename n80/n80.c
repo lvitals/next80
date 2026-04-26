@@ -778,27 +778,42 @@ unsigned char record_and_write_output_byte_only(unsigned char b) {
 #define NEXTBYTE(val) (output[target++] = record_and_write_rel_byte(val))
 #define NEXTBYTE_OUTPUT(val) (output[target++] = record_and_write_output_byte_only(val))
 
-static void emit_encoded_cp(unsigned int cp) {
+static void append_byte_to_buffer(unsigned char **buf, int *len, int *cap, unsigned char b)
+{
+	if (*len >= *cap) {
+		int new_cap = *cap ? *cap * 2 : 32;
+		unsigned char *new_buf = realloc(*buf, new_cap);
+		if (!new_buf) {
+			fprintf(stderr, "Out of memory\n");
+			exit(1);
+		}
+		*buf = new_buf;
+		*cap = new_cap;
+	}
+	(*buf)[(*len)++] = b;
+}
+
+static void append_encoded_cp(unsigned char **buf, int *len, int *cap, unsigned int cp)
+{
 	if (current_encoding == ENC_UTF8) {
-		if (cp < 0x80) NEXTBYTE(cp);
+		if (cp < 0x80) append_byte_to_buffer(buf, len, cap, cp);
 		else if (cp < 0x800) {
-			NEXTBYTE(0xC0 | (cp >> 6));
-			NEXTBYTE(0x80 | (cp & 0x3F));
+			append_byte_to_buffer(buf, len, cap, 0xC0 | (cp >> 6));
+			append_byte_to_buffer(buf, len, cap, 0x80 | (cp & 0x3F));
 		} else if (cp < 0x10000) {
-			NEXTBYTE(0xE0 | (cp >> 12));
-			NEXTBYTE(0x80 | ((cp >> 6) & 0x3F));
-			NEXTBYTE(0x80 | (cp & 0x3F));
+			append_byte_to_buffer(buf, len, cap, 0xE0 | (cp >> 12));
+			append_byte_to_buffer(buf, len, cap, 0x80 | ((cp >> 6) & 0x3F));
+			append_byte_to_buffer(buf, len, cap, 0x80 | (cp & 0x3F));
 		} else {
-			NEXTBYTE(0xF0 | (cp >> 18));
-			NEXTBYTE(0x80 | ((cp >> 12) & 0x3F));
-			NEXTBYTE(0x80 | ((cp >> 6) & 0x3F));
-			NEXTBYTE(0x80 | (cp & 0x3F));
+			append_byte_to_buffer(buf, len, cap, 0xF0 | (cp >> 18));
+			append_byte_to_buffer(buf, len, cap, 0x80 | ((cp >> 12) & 0x3F));
+			append_byte_to_buffer(buf, len, cap, 0x80 | ((cp >> 6) & 0x3F));
+			append_byte_to_buffer(buf, len, cap, 0x80 | (cp & 0x3F));
 		}
 	} else if (current_encoding == ENC_ASCII) {
-		NEXTBYTE(cp < 128 ? cp : '?');
+		append_byte_to_buffer(buf, len, cap, cp < 128 ? cp : '?');
 	} else {
-		// 8-bit or simplified SJIS: pass through low byte if < 256
-		NEXTBYTE(cp < 256 ? cp : '?');
+		append_byte_to_buffer(buf, len, cap, cp < 256 ? cp : '?');
 	}
 }
 int main(int argc, char *argv[]);
@@ -3538,14 +3553,16 @@ int assemble_pseudo_db(int o)
 		if (!is_arith_string && (*eval_cursor == '"' || *eval_cursor == '\'') && (o == PSEUDO_DEFB || o == PSEUDO_DEFC || o == PSEUDO_DEFZ))
 		{
 			unsigned char delim = *eval_cursor;
-			int str_start = target;
+			unsigned char *str_buf = NULL;
+			int str_len = 0;
+			int str_cap = 0;
 			eval_cursor++;
 			while (eval_status >= 0 && (i = (unsigned char)*eval_cursor))
 			{
 				if (i == delim) {
 					if (eval_cursor[1] == delim) {
 						// Double delimiter: "" -> literal "
-						emit_encoded_cp(delim);
+						append_encoded_cp(&str_buf, &str_len, &str_cap, delim);
 						eval_cursor += 2;
 						continue;
 					} else {
@@ -3554,23 +3571,30 @@ int assemble_pseudo_db(int o)
 					}
 				}
 				if (flag_string_escapes && i == '\\') {
-					emit_encoded_cp(eval_escape(i));
+					append_encoded_cp(&str_buf, &str_len, &str_cap, eval_escape(i));
 					eval_cursor++;
 				} else {
 					const char *p_utf8 = eval_cursor;
-					emit_encoded_cp(decode_utf8(&p_utf8));
+					append_encoded_cp(&str_buf, &str_len, &str_cap, decode_utf8(&p_utf8));
 					eval_cursor = (char *)p_utf8;
 				}
 			}
-			if (eval_status < 0 || *eval_cursor != delim)
+			if (eval_status < 0 || *eval_cursor != delim) {
+				free(str_buf);
 				FATAL_ERROR(error_invalid_string);
+			}
+			if (o == PSEUDO_DEFC) {
+				if (str_len == 0) {
+					free(str_buf);
+					FATAL_ERROR(error_invalid_string);
+				}
+				str_buf[str_len - 1] |= 0x80;
+			}
+			for (int j = 0; j < str_len; j++)
+				NEXTBYTE(str_buf[j]);
 			if (o == PSEUDO_DEFZ)
 				NEXTBYTE(0); // a DEFZ string is NULL-terminated
-			else if (o == PSEUDO_DEFC)
-			{
-				if (str_start != target)
-					output[target - 1] += 128; // last char toggled
-			}
+			free(str_buf);
 			eval_cursor++; // skip final delim
 		}
 		else

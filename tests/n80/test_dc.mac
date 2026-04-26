@@ -1,0 +1,5 @@
+; n80 test: MACRO-80 DC/DEFC sets bit 7 on the last byte of each string
+    dc 'ABC'
+    defc 'Z'
+    dc 'A''B'
+    db 'Q'

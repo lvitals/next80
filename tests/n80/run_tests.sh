@@ -296,6 +296,7 @@ run_bin_test "test_8080_jump.mac"    "c30001ca0002c20003da0004d20005fa0006f20007
 run_bin_test "test_8080_pushpop.mac" "c5d5e5f5c1d1e1f1"
 run_bin_test "test_8080_cputype.mac" "0007070f0f"
 run_bin_test "test_8080_new.mac"     "c610ce207676"
+run_bin_test "test_dc.mac"           "4142c3da4127c251"
 
 echo ""
 echo "--- SDCC output tests ---"
