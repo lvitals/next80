@@ -1459,8 +1459,18 @@ void split_input(void)
 		// *p is already 0
 		split_opcode = next;
 		s = split_opcode;
-		while ((unsigned char)*s > 32 && *s != '(')
+		int split1_nonword = 0;
+		while ((unsigned char)*s > 32 && *s != '(') {
 			s++;
+			// M80 compat: stop if next char can't be part of an opcode name
+			// AND the accumulated token is already a known opcode (e.g. .PRINTX/text/)
+			if (*s && *s != '(' && (unsigned char)*s > 32 && !iseither(*s)) {
+				char saved2 = *s; *s = 0;
+				int known = (get_opcode((char *)split_opcode) >= 0 || get_macro((char *)split_opcode) >= 0);
+				*s = saved2;
+				if (known) { split1_nonword = 1; break; }
+			}
+		}
 		if (*s == '(')
 		{
 			// Check if known opcode/macro
@@ -1491,10 +1501,21 @@ void split_input(void)
 		}
 		else if (*s)
 		{
-			*s++ = 0;
-			while (*s && (unsigned char)*s <= 32)
-				s++;
-			split_parmtr = s;
+			if (split1_nonword) {
+				// Non-space terminator (e.g. / for .PRINTX): copy opcode to buf,
+				// leave delimiter in place so parmtr includes it
+				size_t oplen = (size_t)(s - split_opcode);
+				if (oplen > sizeof(split_opcode_buf) - 1) oplen = sizeof(split_opcode_buf) - 1;
+				memcpy(split_opcode_buf, (char *)split_opcode, oplen);
+				split_opcode_buf[oplen] = 0;
+				split_opcode = split_opcode_buf;
+				split_parmtr = s;
+			} else {
+				*s++ = 0;
+				while (*s && (unsigned char)*s <= 32)
+					s++;
+				split_parmtr = s;
+			}
 		}
 	}
 	else
@@ -1503,8 +1524,16 @@ void split_input(void)
 		split_symbol = end;
 		split_opcode = first;
 		s = split_opcode;
-		while ((unsigned char)*s > 32 && *s != '(')
+		int split2_nonword = 0;
+		while ((unsigned char)*s > 32 && *s != '(') {
 			s++;
+			if (*s && *s != '(' && (unsigned char)*s > 32 && !iseither(*s)) {
+				char saved2 = *s; *s = 0;
+				int known = (get_opcode((char *)split_opcode) >= 0 || get_macro((char *)split_opcode) >= 0);
+				*s = saved2;
+				if (known) { split2_nonword = 1; break; }
+			}
+		}
 		if (*s == '(')
 		{
 			// Check if known opcode/macro
@@ -1535,10 +1564,19 @@ void split_input(void)
 		}
 		else if (*s)
 		{
-			*s++ = 0;
-			while (*s && (unsigned char)*s <= 32)
-				s++;
-			split_parmtr = s;
+			if (split2_nonword) {
+				size_t oplen = (size_t)(s - split_opcode);
+				if (oplen > sizeof(split_opcode_buf) - 1) oplen = sizeof(split_opcode_buf) - 1;
+				memcpy(split_opcode_buf, (char *)split_opcode, oplen);
+				split_opcode_buf[oplen] = 0;
+				split_opcode = split_opcode_buf;
+				split_parmtr = s;
+			} else {
+				*s++ = 0;
+				while (*s && (unsigned char)*s <= 32)
+					s++;
+				split_parmtr = s;
+			}
 		}
 	}
 

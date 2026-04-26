@@ -1,11 +1,13 @@
 ; n80 test: M80 listing directives — .PRINTX and TITLE
 ;   .PRINTX: prints content between delimiters (first char is delimiter)
 ;   TITLE:   consumed silently (no-op for listing header)
+;   .PRINTX without space between directive and delimiter (M80 real-world syntax)
 
     TITLE CPMIO CONSOLE I/O ROUTINES FOR CP/M
     SUBTTL Internal Definitions
 
-    .PRINTX /NORMAL CPM VERSION/
+    .PRINTX /WITH SPACE/
     .PRINTX !ALTERNATE DELIMITER!
+    .PRINTX/NO SPACE BEFORE DELIMITER/
 
     end
