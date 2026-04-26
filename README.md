@@ -1,6 +1,6 @@
 # Next80
 
-> *A Z80 / R800 / Z280 assembler toolchain for the universe of machines that speak C.*
+> *A 8080 / Z80 / R800 / Z280 assembler toolchain for the universe of machines that speak C.*
 
 **Next80** is a native C port of [Nestor80](https://github.com/Konamiman/Nestor80) — the modern, MACRO-80 compatible assembler originally written in C# by [Konamiman](https://github.com/Konamiman). If you have ever written Z80 assembly and wanted a fast, dependency-free toolchain that compiles from source on virtually any machine alive today, this is it.
 
