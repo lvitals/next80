@@ -1,0 +1,11 @@
+; n80 test: M80 listing directives — .PRINTX and TITLE
+;   .PRINTX: prints content between delimiters (first char is delimiter)
+;   TITLE:   consumed silently (no-op for listing header)
+
+    TITLE CPMIO CONSOLE I/O ROUTINES FOR CP/M
+    SUBTTL Internal Definitions
+
+    .PRINTX /NORMAL CPM VERSION/
+    .PRINTX !ALTERNATE DELIMITER!
+
+    end

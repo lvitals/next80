@@ -235,7 +235,8 @@ for t in \
     test_m80_compat.mac \
     test_m80_missing.mac \
     test_m80_numbers.mac \
-    test_cpi_compat.mac
+    test_cpi_compat.mac \
+    test_m80_listing.mac
 do
     run_rel_test "$t"
 done

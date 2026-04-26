@@ -5919,12 +5919,12 @@ int assemble_input(void) // 0 OK, !0 ERROR
 					interpolate_string(s_pr, buf, sizeof(buf));
 					fprintf(stderr, "%s\n", buf);
 				} else if (*s_pr) {
-					// .PRINTX: first char is delimiter; print from it up to and
-					// including the closing delimiter (or end of line if absent)
+					// .PRINTX: first char is delimiter; print content between delimiters
 					char delim = *s_pr;
-					char *end_pr = strchr(s_pr + 1, delim);
-					if (end_pr) *(end_pr + 1) = 0;
-					interpolate_string(s_pr, buf, sizeof(buf));
+					char *content = s_pr + 1;
+					char *end_pr = strchr(content, delim);
+					if (end_pr) *end_pr = 0;
+					interpolate_string(content, buf, sizeof(buf));
 					fprintf(stderr, "%s\n", buf);
 				}
 				break;
