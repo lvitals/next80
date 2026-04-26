@@ -1,0 +1,28 @@
+; n80 test: Z280 Double Indexing
+    org 100h
+    .cpu Z280
+
+    ; Arithmetic
+    add a, (hl+ix)
+    adc a, (hl+iy)
+    sub a, (ix+iy)
+    sbc a, (hl+ix)
+    and a, (hl+iy)
+    xor a, (ix+iy)
+    or a, (hl+ix)
+    cp a, (hl+iy)
+    
+    ; Implicit A
+    sub (hl+ix)
+    xor (ix+iy)
+    
+    ; LD
+    ld a, (hl+ix)
+    ld a, (hl+iy)
+    ld a, (ix+iy)
+    ld (hl+ix), a
+    ld (hl+iy), a
+    ld (ix+iy), a
+
+    ret
+    end

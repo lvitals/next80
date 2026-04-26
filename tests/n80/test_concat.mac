@@ -1,0 +1,17 @@
+	name	('test_concat')
+
+test_mac	macro	suffix
+prefix_&suffix::
+	ld	a, 1
+	endm
+
+	.z80
+	org	100h
+
+start:
+	test_mac one
+	test_mac two
+
+	ret
+
+	end	start

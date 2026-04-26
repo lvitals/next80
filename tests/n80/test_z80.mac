@@ -1,0 +1,13 @@
+	name	('test_z80')
+	title	'Z80 Basic Instruction Test'
+
+	.z80
+
+start:
+	ld	a, 1
+	ld	b, 2
+	add	a, b
+	ld	(hl), a
+	ret
+
+	end	start

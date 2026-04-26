@@ -1,0 +1,6 @@
+ .strenc UTF-8
+ .stresc on
+ db "\u00A9"
+ db "\uD83D\uDE00"
+ db "\x41"
+ db "\n\r"

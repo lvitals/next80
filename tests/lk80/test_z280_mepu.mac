@@ -1,0 +1,16 @@
+; lk80/n80 integration test: Z280 MEPU
+    org 0
+    .cpu Z280
+
+    mepu (hl)
+    mepu (hl+ix)
+    mepu (hl+iy)
+    mepu (ix+iy)
+    mepu (hl+1)
+    mepu (ix+2)
+    mepu (iy-3)
+    mepu (pc+4)
+    mepu (sp+5)
+    mepu (1234h)
+
+    end

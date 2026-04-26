@@ -1,0 +1,9 @@
+    .NAME 'MODNAME'
+    .PHASE 8000h
+start:
+    ld a, (label)
+    .DEPHASE
+label:
+    db 42
+    public start
+    end

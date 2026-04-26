@@ -1,0 +1,12 @@
+; Test IFCPU directive with 8080 CPU
+.8080
+ifcpu 8080
+    nop         ; 00 - assembled when 8080
+endif
+ifncpu 8080
+    halt        ; NOT assembled
+endif
+.z80
+ifcpu z80
+    nop         ; 00 - assembled when z80
+endif

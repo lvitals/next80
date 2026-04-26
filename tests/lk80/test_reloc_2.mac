@@ -1,0 +1,14 @@
+; n80 test: Relocatable segments (Part 2)
+    
+    public EXT1
+    extrn PUB1
+
+    cseg
+EXT1:
+    ld a, 42
+    ret
+
+    dseg
+    dw PUB1
+
+    end

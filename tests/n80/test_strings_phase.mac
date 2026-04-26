@@ -1,0 +1,20 @@
+; n80 test: String Encodings and Phase
+    org 100h
+
+    .strenc UTF-8
+    db "Olá mundo!" ; UTF-8 multi-byte
+    
+    .strenc ASCII
+    db "Hello!"
+    
+    .stresc ON
+    db "Escaped: \n\r\t"
+    
+    .phase 8000h
+target:
+    ld a, (target)
+    ret
+    .dephase
+
+    ret
+    end

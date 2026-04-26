@@ -1,0 +1,9 @@
+; n80 test: SDCC/XL3 LOW/HIGH byte relocations
+
+    .area _CODE
+    db low target
+    db high target
+target:
+    ret
+
+    end

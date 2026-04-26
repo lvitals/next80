@@ -1,0 +1,20 @@
+; n80 test: SDCC Areas advanced
+    
+    .area _CODE
+    ld a, 1
+    
+    .area _DATA (REL, CON)
+    db 10, 20
+    
+    .area MY_AREA (REL, OVR)
+    db 30, 40
+
+    .area _ABS (ABS, OVR)
+    org 0F000h
+    db "SDCC ABS"
+    
+    .area CUSTOM_ABS (ABS)
+    org 0E000h
+    db "Another ABS"
+
+    end

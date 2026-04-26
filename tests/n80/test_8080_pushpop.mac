@@ -1,0 +1,9 @@
+.8080
+    push b
+    push d
+    push h
+    push psw
+    pop b
+    pop d
+    pop h
+    pop psw

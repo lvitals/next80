@@ -1,0 +1,10 @@
+; n80 test: SDCC/XL3 internal word relocation
+
+    .area _CODE
+start:
+    dw target
+    nop
+target:
+    ret
+
+    end

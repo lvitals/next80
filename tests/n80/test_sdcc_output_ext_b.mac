@@ -1,0 +1,8 @@
+; n80 test: SDCC/XL3 external relocation consumer
+
+    .area _CODE
+extrn _helper
+    call _helper
+    ret
+
+    end

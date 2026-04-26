@@ -1,0 +1,7 @@
+	org 100h
+	db 1
+	.align 16, 0xAA
+	db 2
+	align 32, 0xBB
+	db 3
+	end

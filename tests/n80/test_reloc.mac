@@ -1,0 +1,24 @@
+; n80 test: Relocatable segments (MACRO-80 format)
+    
+    public PUB1, PUB2
+    extrn EXT1
+
+    cseg
+PUB1:
+    ld hl, EXT1
+    call EXT1
+    ret
+
+    dseg
+PUB2:
+    db 1, 2, 3, 4
+
+    aseg
+    org 0F000h
+    db "Fixed in RAM"
+
+    common /MYCOM/
+COM_VAL:
+    dw 0
+
+    end

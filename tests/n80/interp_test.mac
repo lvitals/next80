@@ -1,0 +1,9 @@
+	VALUE  EQU  1234h
+	
+	.printx /Value: {VALUE}, {VALUE:H}h, {VALUE:x4}h, {VALUE:b16}b/
+	
+	.warn  Value is {VALUE+1:D}
+	
+	; .error Force stop with {VALUE}
+	
+	END

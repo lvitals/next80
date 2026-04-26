@@ -1,0 +1,32 @@
+	name	('test_macro_ops')
+
+; Test escape operator !
+test_esc	macro	arg
+	db	'arg'
+	endm
+
+; Test evaluation operator %
+test_eval	macro	val
+	db	val
+	endm
+
+	.z80
+	org	100h
+
+start:
+	; Should output 'A', ',', 'B'
+	test_esc <A!,B>
+	
+	; Should output decimal 30
+	test_eval %10+20
+	
+	; In-body evaluation
+val_in	equ	50
+test_in	macro
+	db	%val_in + 10
+	endm
+	test_in
+
+	ret
+
+	end	start

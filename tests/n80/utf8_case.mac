@@ -1,0 +1,8 @@
+	PUBLIC Símbolo
+Símbolo:
+	NOP
+	
+	; Different case
+	CALL símbolo
+	
+	END

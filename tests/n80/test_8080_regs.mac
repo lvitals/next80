@@ -1,0 +1,13 @@
+.8080
+    mov a,b
+    mov a,c
+    mov a,m
+    mov m,a
+    mvi a,42h
+    mvi b,0
+    mvi m,5
+    inr a
+    inr b
+    inr m
+    dcr a
+    dcr b

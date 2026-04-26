@@ -1,0 +1,15 @@
+	org 100h
+	; Default is ASCII
+	db "a", "á", "z"
+	
+	.strenc UTF-8
+	db "a", "á", "z"
+	
+	.strenc LATIN1
+	db "a", "á", "z"
+	
+	.strenc UTF-8
+	db "\u00E1"
+	db "\u1234"
+	
+	end

@@ -1,0 +1,17 @@
+; n80 test: .EXTROOT
+    extrn EXT_SYM
+    
+    module MYMOD
+    ; Without .EXTROOT, this would look for MYMOD.EXT_SYM
+    ; which does not exist, and fail (unless we used :EXT_SYM)
+    
+    .extroot
+    ld hl, EXT_SYM
+    .xextroot
+    
+    ; Now it should look for MYMOD.EXT_SYM again and fail
+    ; unless we declare it local or use colon.
+    ld a, 0
+    endmod
+
+    end

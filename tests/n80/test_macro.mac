@@ -1,0 +1,30 @@
+	name	('test_macro')
+
+; Macro definition
+test_macro	macro	arg1, arg2
+	ld	a, arg1
+	ld	b, arg2
+	add	a, b
+	endm
+
+; REPT test
+	.z80
+	org	100h
+
+start:
+	test_macro 1, 2
+	test_macro 10, 20
+
+	REPT 3
+	inc	a
+	ENDM
+
+; Local symbols in macros (using ??)
+m_local	macro
+??lbl:	djnz	??lbl
+	endm
+
+	m_local
+	m_local
+
+	end	start

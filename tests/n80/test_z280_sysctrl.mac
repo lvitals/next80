@@ -1,0 +1,41 @@
+; n80 test: Z280 System & Control instructions
+; SC, RETIL, LDUD, LDUP
+    org 0
+    .cpu Z280
+
+; ---- SC nn ---- system call with 16-bit number
+    sc 0          ; ED 71 00 00
+    sc 1          ; ED 71 01 00
+    sc 0FFFFh     ; ED 71 FF FF
+
+; ---- RETIL ---- return from interrupt (long)
+    retil         ; ED 55
+
+; ---- LDUD ---- load/store via user address space (privileged)
+; load: A <- (user mem)
+    ldud a,(hl)   ; ED 86
+    ldud a,(ix+0) ; DD ED 86 00
+    ldud a,(ix+5) ; DD ED 86 05
+    ldud a,(iy+0) ; FD ED 86 00
+    ldud a,(iy-1) ; FD ED 86 FF
+; store: (user mem) <- A
+    ldud (hl),a   ; ED 8E
+    ldud (ix+0),a ; DD ED 8E 00
+    ldud (ix+10),a; DD ED 8E 0A
+    ldud (iy+0),a ; FD ED 8E 00
+    ldud (iy+20),a; FD ED 8E 14
+
+; ---- LDUP ---- load/store via user address space (alternate)
+; load: A <- (user mem)
+    ldup a,(hl)   ; ED 96
+    ldup a,(ix+0) ; DD ED 96 00
+    ldup a,(ix+5) ; DD ED 96 05
+    ldup a,(iy+0) ; FD ED 96 00
+    ldup a,(iy-1) ; FD ED 96 FF
+; store: (user mem) <- A
+    ldup (hl),a   ; ED 9E
+    ldup (ix+0),a ; DD ED 9E 00
+    ldup (ix+10),a; DD ED 9E 0A
+    ldup (iy+0),a ; FD ED 9E 00
+    ldup (iy+20),a; FD ED 9E 14
+    end

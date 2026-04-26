@@ -1,0 +1,30 @@
+; n80 test: Z280 IO and INCW
+    org 100h
+    .cpu Z280
+
+    ; 16-bit IO
+    inw hl, (c)
+    outw (c), hl
+    
+    ; IO block instructions (16-bit)
+    iniw
+    inirw
+    indw
+    indrw
+    outiw
+    otirw
+    outdw
+    otdrw
+    
+    ; INCW
+    incw bc
+    incw hl
+    incw sp
+    incw (hl)
+    incw (ix+5)
+    incw (iy-10)
+    incw (sp+100)
+    incw (pc-50)
+
+    ret
+    end

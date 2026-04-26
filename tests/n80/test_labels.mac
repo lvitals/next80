@@ -1,0 +1,20 @@
+	name	('test_labels')
+
+	.z80
+	org	100h
+
+routine1:
+	ld	a, 1
+.local:
+	dec	a
+	jr	nz, .local
+	ret
+
+routine2:
+	ld	a, 5
+.local:
+	dec	a
+	jr	nz, .local
+	ret
+
+	end	routine1

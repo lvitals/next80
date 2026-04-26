@@ -1,0 +1,26 @@
+	name	('test_expr')
+
+val1	equ	10
+val2	equ	20
+val3	equ	val1 + val2 * 2	; Should be 50 if * has precedence, or 60 if left-to-right. 
+                        ; MACRO-80 usually does left-to-right? 
+                        ; Let's check Nestor80 docs.
+
+	.z80
+
+	org	100h
+
+start:
+	ld	a, val1
+	ld	b, val2
+	ld	c, val3
+	ld	d, (5 + 5) / 2
+	ld	e, 10 & 7
+	ld	h, 10 | 1
+	ld	l, 10 ^ 3
+
+	db	1, 2, 3 + 4
+	dw	1000h, start + 10
+	ds	10, 0AAh
+
+	end	start

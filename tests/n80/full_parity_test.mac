@@ -1,0 +1,37 @@
+	org 100h
+	
+	; Test EXITM
+	rept 5
+	db $
+	if $ eq 102h
+		exitm
+	endif
+	endm
+	
+	; Test CONTM
+	rept 3
+	db 1
+	contm
+	db 2 ; should be skipped
+	endm
+	
+	; Test .COMMENT
+	.comment *
+	This is a multiline comment
+	that should be ignored.
+	*
+	
+	; Test IFIDN / IFDIF
+	ifidn <abc>, <abc>
+	db 0xAA
+	endif
+	
+	ifdif <abc>, <def>
+	db 0xBB
+	endif
+	
+	; Test TYPE
+	db type 100h
+	db type $
+	
+	end

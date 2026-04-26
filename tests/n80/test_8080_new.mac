@@ -1,0 +1,5 @@
+.8080
+    adi 10h
+    aci 20h
+    hlt
+    mov m,m

@@ -1,0 +1,59 @@
+; n80 test: Z280 ADDW, SUBW, INCW, DECW
+    org 100h
+    .cpu Z280
+
+    ; ADDW
+    addw hl, bc
+    addw hl, de
+    addw hl, hl
+    addw hl, sp
+    addw hl, ix
+    addw hl, iy
+    addw hl, (hl)
+    addw hl, (ix+5)
+    addw hl, (iy-10)
+    addw hl, (pc+50)
+    addw hl, 1234h
+    addw hl, (5678h)
+
+    ; SUBW
+    subw hl, bc
+    subw hl, de
+    subw hl, hl
+    subw hl, sp
+    subw hl, ix
+    subw hl, iy
+    subw hl, (hl)
+    subw hl, (ix+5)
+    subw hl, (iy-10)
+    subw hl, (pc+50)
+    subw hl, 1234h
+    subw hl, (5678h)
+
+    ; INCW
+    incw bc
+    incw de
+    incw hl
+    incw sp
+    incw ix
+    incw iy
+    incw (hl)
+    incw (ix+5)
+    incw (iy-10)
+    incw (pc+50)
+    incw (5678h)
+
+    ; DECW
+    decw bc
+    decw de
+    decw hl
+    decw sp
+    decw ix
+    decw iy
+    decw (hl)
+    decw (ix+5)
+    decw (iy-10)
+    decw (pc+50)
+    decw (5678h)
+
+    end

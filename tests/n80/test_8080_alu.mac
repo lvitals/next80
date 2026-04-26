@@ -1,0 +1,12 @@
+.8080
+    ana a
+    ana m
+    xra b
+    ora c
+    cmp d
+    ani 0FFh
+    xri 55h
+    ori 0Fh
+    sui 1
+    sbi 2
+    cpi 3

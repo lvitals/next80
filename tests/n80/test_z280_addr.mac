@@ -1,0 +1,33 @@
+; n80 test: Z280 new addressing modes (LD + Arithmetic)
+    org 100h
+    .cpu Z280
+
+    ; PC-Relative
+    ld a, (pc+5)
+    add a, (pc+10)
+    sub (pc-5)
+    cp (pc+400)
+    
+    ; SP-Relative
+    ld a, (sp+10)
+    adc a, (sp+50)
+    and (sp-10)
+    or (sp+600)
+    
+    ; IX/IY Word Offset (long)
+    ld a, (ix+300)
+    add a, (iy-500)
+    xor (ix+1000)
+    
+    ; IX/IY Byte Offset (short - should use standard Z80 opcodes)
+    ld a, (ix+10)
+    sub (iy-5)
+    
+    ; Store from reg8 to (base+dd)
+    ld (ix+400), a
+    ld (iy-200), b
+    ld (sp+50), c
+    ld (pc+20), d
+
+    ret
+    end

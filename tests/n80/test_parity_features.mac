@@ -1,0 +1,20 @@
+    .TITLE 'PARITYTEST'
+
+    cseg
+start:
+    nop
+    
+    ; Test relocatable .PHASE
+    .phase start + 1000h
+phase_label:
+    jp phase_label    ; Should jump to logical address (start+1000h)
+    ld hl, $          ; Should load logical address
+    db 0              ; Padding
+    .dephase
+
+end_label:
+    jp start          ; Should jump back to physical address
+    
+    ; Test labels under phase
+    public phase_label, end_label
+    end

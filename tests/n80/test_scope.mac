@@ -1,0 +1,23 @@
+; n80 test: Modules and Relative Labels
+    org 100h
+
+    .relab
+
+parent:
+    ld a, 1
+.loop:
+    dec a
+    jr nz, .loop
+
+module MYMOD
+subroutine:
+    ld b, 2
+.loop:
+    djnz .loop
+    ret
+endmod
+
+    call MYMOD.subroutine
+
+    ret
+    end

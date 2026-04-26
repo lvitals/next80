@@ -1,0 +1,9 @@
+	VAL  EQU  100
+	
+	.print Interpolated: {VAL} (dec), {VAL:H} (hex), {VAL:b8} (bin)
+	
+	ORG 100h
+	NOP
+	.warn  Warning at {$:H}h
+	
+	END

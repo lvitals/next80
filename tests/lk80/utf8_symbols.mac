@@ -1,0 +1,14 @@
+	PUBLIC Símbolo_Público
+Símbolo_Público:
+	LD A, 42
+	RET
+
+	MODULE Módulo_UTF8
+Rótulo_Local:
+	LD B, 1
+	ENDMOD
+
+	; Test referring to UTF-8 symbol
+	CALL Símbolo_Público
+
+	END

@@ -1,0 +1,21 @@
+.8080
+    nop
+    cma
+    cmc
+    stc
+    ral
+    rar
+    xchg
+    xthl
+    sphl
+    pchl
+    rlc
+    rrc
+    rc
+    rnc
+    rz
+    rnz
+    rm
+    rp
+    rpe
+    rpo

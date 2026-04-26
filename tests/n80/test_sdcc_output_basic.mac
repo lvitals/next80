@@ -1,0 +1,16 @@
+; n80 test: SDCC/XL3 text output without relocations
+
+    .area _CODE
+public start
+start:
+    ld a, 42h
+    ret
+
+    .area _DATA (REL, CON)
+data_start:
+    db 11h, 22h
+
+    .area CUSTOM (REL, OVR)
+    db 33h, 44h
+
+    end

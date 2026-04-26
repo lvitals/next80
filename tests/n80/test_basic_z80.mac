@@ -1,0 +1,57 @@
+; n80 test: Basic Z80 instructions and expressions
+    NAME 'BASIC'
+    org 100h
+
+start:
+    ld a, 1 + 2 * 3      ; 7
+    ld b, (10 + 5) / 3   ; 5
+    ld c, 100 mod 30     ; 10
+    ld d, 1 shl 4        ; 16
+    ld e, 128 shr 2      ; 32
+    
+    ld hl, 1234h
+    ld a, high 1234h     ; 12h
+    ld a, low 1234h      ; 34h
+    
+    ld a, not 0          ; FFh
+    ld a, 55h and 0Fh    ; 05h
+    ld a, 55h or 0AAh    ; FFh
+    ld a, 55h xor 0FFh   ; AAh
+    
+    ; Comparison operators (FFFFh if true, 0 if false)
+    ld hl, 10 eq 10      ; FFFFh
+    ld hl, 10 ne 10      ; 0
+    ld hl, 20 gt 10      ; FFFFh
+    ld hl, 10 lt 20      ; FFFFh
+    ld hl, 20 ge 20      ; FFFFh
+    ld hl, 20 le 20      ; FFFFh
+    
+    ; Nestor80 aliases
+    ld hl, 10 = 10
+
+    ; Z80 instructions
+    nop
+    rlca
+    rrca
+    rla
+    rra
+    daa
+    cpl
+    scf
+    ccf
+    halt
+    
+    ld a, (hl)
+    ld (hl), a
+    add a, b
+    adc a, c
+    sub d
+    sbc a, e
+    and 7
+    xor 8
+    or 9
+    cp 10
+    
+    ret
+    
+    end start

@@ -1,0 +1,38 @@
+; n80 test: String comparison conditionals
+    org 100h
+
+; Identical strings (case-sensitive)
+    ifidn <abc>, <abc>
+    .print [IFIDN] Correct: abc == abc
+    else
+    .print [IFIDN] FAILED: abc == abc
+    endif
+
+    ifidn <abc>, <ABC>
+    .print [IFIDN] FAILED: abc == ABC (should be case-sensitive)
+    else
+    .print [IFIDN] Correct: abc != ABC
+    endif
+
+; Identical strings (case-insensitive)
+    ifidni <abc>, <ABC>
+    .print [IFIDNI] Correct: abc == ABC
+    else
+    .print [IFIDNI] FAILED: abc == ABC
+    endif
+
+; Different strings
+    ifdif <abc>, <def>
+    .print [IFDIF] Correct: abc != def
+    else
+    .print [IFDIF] FAILED: abc != def
+    endif
+
+    ifdifi <ABC>, <abc>
+    .print [IFDIFI] FAILED: ABC != abc
+    else
+    .print [IFDIFI] Correct: ABC == abc
+    endif
+
+    ret
+    end

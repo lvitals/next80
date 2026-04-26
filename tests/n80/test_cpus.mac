@@ -1,0 +1,38 @@
+; n80 test: R800 and Z280 instructions expanded
+    org 100h
+
+    .cpu R800
+    ifcpu R800
+    .print [R800] Testing MULUB/MULUW
+    mulub a, b
+    muluw hl, bc
+    endif
+    
+    .cpu Z280
+    ifcpu Z280
+    .print [Z280] Testing LDA, LDCTL, ADDW, LDW, MULT
+    lda hl, (sp+10)
+    ldctl (c), hl
+    addw hl, bc
+    ldw de, (hl)
+    ldw (hl), de
+    mult a, b
+    
+    .print [Z280] Testing MULTW, DIVW, EXTS, TSET, PCACHE
+    multw hl, bc
+    divw dehl, de
+    exts a
+    exts hl
+    tset a
+    tset (hl)
+    pcache
+    endif
+
+    .cpu Z80
+    ifncpu R800
+    .print [Z80] Returning to Z80
+    ld a, 0
+    endif
+
+    ret
+    end

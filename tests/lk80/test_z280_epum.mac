@@ -1,0 +1,16 @@
+; lk80/n80 integration test: Z280 EPUM
+    org 0
+    .cpu Z280
+
+    epum (hl)
+    epum (hl+ix)
+    epum (hl+iy)
+    epum (ix+iy)
+    epum (hl+1)
+    epum (ix+2)
+    epum (iy-3)
+    epum (pc+4)
+    epum (sp+5)
+    epum (1234h)
+
+    end

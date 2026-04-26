@@ -1,0 +1,22 @@
+    org 0
+.8080
+    jmp 100h
+    jz  200h
+    jnz 300h
+    jc  400h
+    jnc 500h
+    jm  600h
+    jp  700h
+    jpe 800h
+    jpo 900h
+    cnz 0A00h
+    cz  0B00h
+    cnc 0C00h
+    cc  0D00h
+    cpe 0E00h
+    cpo 0F00h
+    cm  1000h
+    shld 1100h
+    lhld 1200h
+    sta  1300h
+    lda  1400h

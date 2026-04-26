@@ -1,0 +1,36 @@
+; n80 test: Z280 JAF and JAR relative jump instructions
+; JAF label  →  DD 28 n  (jump on accumulator flag)
+; JAR label  →  DD 20 n  (jump on result)
+; n = dest - (PC + 3)  (3-byte instruction, signed 8-bit offset)
+    org 0
+    .cpu Z280
+
+; JAF forward: dest=6, PC=0 → n = 6-3 = 3 → DD 28 03
+jaf_fwd:
+    jaf jaf_target    ; DD 28 03
+    nop               ; 00
+    nop               ; 00
+    nop               ; 00
+jaf_target:
+
+; JAR forward: dest=12, PC=6 → n = 12-9 = 3 → DD 20 03
+jar_fwd:
+    jar jar_target    ; DD 20 03
+    nop               ; 00
+    nop               ; 00
+    nop               ; 00
+jar_target:
+
+; JAF backward: at PC=12, dest=12 → n = 12-15 = -3 → DD 28 FD
+jaf_back:
+    jaf jaf_back      ; DD 28 FD  (self-loop: dest=12, PC=12, n=12-15=-3=FD)
+
+; JAR backward: at PC=15, dest=15 → n = -3 → DD 20 FD
+jar_back:
+    jar jar_back      ; DD 20 FD  (self-loop: dest=15, PC=15, n=15-18=-3=FD)
+
+; JAF with zero offset: dest=PC+3 → n=0 → DD 28 00
+    jaf $+3           ; DD 28 00
+; JAR with zero offset
+    jar $+3           ; DD 20 00
+    end

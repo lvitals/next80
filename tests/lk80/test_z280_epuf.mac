@@ -1,0 +1,7 @@
+; lk80/n80 integration test: Z280 EPUF
+    org 0
+    .cpu Z280
+
+    epuf
+
+    end

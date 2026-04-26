@@ -1,0 +1,91 @@
+; n80 test: Z280 MULT, MULTU, DIV, DIVU
+    org 100h
+    .cpu Z280
+
+    ; MULT A, reg
+    mult a, b
+    mult a, c
+    mult a, d
+    mult a, e
+    mult a, h
+    mult a, l
+    mult a, a
+    mult a, ixh
+    mult a, ixl
+    mult a, iyh
+    mult a, iyl
+
+    ; MULT A, (mem)
+    mult a, (hl)
+    mult a, (hl+ix)
+    mult a, (hl+iy)
+    mult a, (ix+iy)
+    mult a, (ix+5)
+    mult a, (iy+5)
+    mult a, (ix+1000h)
+    mult a, (iy+1000h)
+    mult a, (sp+1000h)
+    mult a, (pc+1000h)
+    mult a, (hl+1000h)
+    mult a, (1000h)
+
+    ; MULT A, n
+    mult a, 5
+
+    ; MULTU A, reg
+    multu a, b
+    multu a, ixh
+
+    ; MULTU A, (mem)
+    multu a, (hl)
+    multu a, (ix+5)
+    multu a, (ix+1000h)
+    multu a, (1000h)
+
+    ; MULTU A, n
+    multu a, 5
+
+    ; DIV HL, reg
+    div hl, b
+    div hl, c
+    div hl, d
+    div hl, e
+    div hl, h
+    div hl, l
+    div hl, a
+    div hl, ixh
+    div hl, ixl
+    div hl, iyh
+    div hl, iyl
+
+    ; DIV HL, (mem)
+    div hl, (hl)
+    div hl, (hl+ix)
+    div hl, (hl+iy)
+    div hl, (ix+iy)
+    div hl, (ix+5)
+    div hl, (iy+5)
+    div hl, (ix+1000h)
+    div hl, (iy+1000h)
+    div hl, (sp+1000h)
+    div hl, (pc+1000h)
+    div hl, (hl+1000h)
+    div hl, (1000h)
+
+    ; DIV HL, n
+    div hl, 5
+
+    ; DIVU HL, reg
+    divu hl, b
+    divu hl, ixh
+
+    ; DIVU HL, (mem)
+    divu hl, (hl)
+    divu hl, (ix+5)
+    divu hl, (ix+1000h)
+    divu hl, (1000h)
+
+    ; DIVU HL, n
+    divu hl, 5
+
+    end

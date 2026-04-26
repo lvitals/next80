@@ -1,0 +1,63 @@
+; n80 test: Z280 32-bit Accumulator operations
+; Tests MULTW, MULTUW, DIVW, DIVUW with all addressing modes
+; MULTW/MULTUW: first operand HL, result in DEHL
+; DIVW/DIVUW:   first operand DEHL, quotient->HL, remainder->DE
+    org 0
+    .cpu Z280
+
+; ---- MULTW HL, src16 ---- signed 16x16 multiply, result in DEHL
+    multw hl,bc          ; ED C2
+    multw hl,de          ; ED D2
+    multw hl,hl          ; ED E2
+    multw hl,sp          ; ED F2
+    multw hl,(hl)        ; DD ED C2
+    multw hl,ix          ; DD ED E2
+    multw hl,iy          ; FD ED E2
+    multw hl,(ix+1)      ; FD ED C2 01 00
+    multw hl,(iy+2)      ; FD ED D2 02 00
+    multw hl,(pc+3)      ; DD ED F2 03 00
+    multw hl,(4)         ; DD ED D2 04 00
+    multw hl,5           ; FD ED F2 05 00
+
+; ---- MULTUW HL, src16 ---- unsigned 16x16 multiply, result in DEHL
+    multuw hl,bc         ; ED C3
+    multuw hl,de         ; ED D3
+    multuw hl,hl         ; ED E3
+    multuw hl,sp         ; ED F3
+    multuw hl,(hl)       ; DD ED C3
+    multuw hl,ix         ; DD ED E3
+    multuw hl,iy         ; FD ED E3
+    multuw hl,(ix+1)     ; FD ED C3 01 00
+    multuw hl,(iy+2)     ; FD ED D3 02 00
+    multuw hl,(pc+3)     ; DD ED F3 03 00
+    multuw hl,(4)        ; DD ED D3 04 00
+    multuw hl,5          ; FD ED F3 05 00
+
+; ---- DIVW DEHL, src16 ---- signed 32/16 divide: HL=quotient, DE=remainder
+    divw dehl,bc         ; ED CA
+    divw dehl,de         ; ED DA
+    divw dehl,hl         ; ED EA
+    divw dehl,sp         ; ED FA
+    divw dehl,(hl)       ; DD ED CA
+    divw dehl,ix         ; DD ED EA
+    divw dehl,iy         ; FD ED EA
+    divw dehl,(ix+1)     ; FD ED CA 01 00
+    divw dehl,(iy+2)     ; FD ED DA 02 00
+    divw dehl,(pc+3)     ; DD ED FA 03 00
+    divw dehl,(4)        ; DD ED DA 04 00
+    divw dehl,5          ; FD ED FA 05 00
+
+; ---- DIVUW DEHL, src16 ---- unsigned 32/16 divide: HL=quotient, DE=remainder
+    divuw dehl,bc        ; ED CB
+    divuw dehl,de        ; ED DB
+    divuw dehl,hl        ; ED EB
+    divuw dehl,sp        ; ED FB
+    divuw dehl,(hl)      ; DD ED CB
+    divuw dehl,ix        ; DD ED EB
+    divuw dehl,iy        ; FD ED EB
+    divuw dehl,(ix+1)    ; FD ED CB 01 00
+    divuw dehl,(iy+2)    ; FD ED DB 02 00
+    divuw dehl,(pc+3)    ; DD ED FB 03 00
+    divuw dehl,(4)       ; DD ED DB 04 00
+    divuw dehl,5         ; FD ED FB 05 00
+    end

@@ -1,0 +1,80 @@
+; n80 test: Z280 LDW
+    org 100h
+    .cpu Z280
+
+    ; LDW reg16, (HL)
+    ldw bc, (hl)
+    ldw de, (hl)
+    ldw hl, (hl)
+    ldw sp, (hl)
+
+    ; LDW (HL), reg16
+    ldw (hl), bc
+    ldw (hl), de
+    ldw (hl), hl
+    ldw (hl), sp
+
+    ; LDW reg16, (IX+d) / (IY+d)
+    ldw bc, (ix+5)
+    ldw de, (iy-5)
+    ldw hl, (ix+5)
+    ldw sp, (iy-5)
+
+    ; LDW (IX+d) / (IY+d), reg16
+    ldw (ix+5), bc
+    ldw (iy-5), de
+    ldw (ix+5), hl
+    ldw (iy-5), sp
+
+    ; LDW reg16, (HL+IX) / (HL+IY) / (IX+IY)
+    ldw hl, (hl+ix)
+    ldw ix, (hl+iy)
+    ldw iy, (ix+iy)
+
+    ; LDW (HL+IX) / (HL+IY) / (IX+IY), reg16
+    ldw (hl+ix), hl
+    ldw (hl+iy), ix
+    ldw (ix+iy), iy
+
+    ; LDW reg16, (SP+nn) / (PC+nn)
+    ldw hl, (sp+1000h)
+    ldw ix, (pc+1000h)
+    ldw iy, (sp+1000h)
+
+    ; LDW (SP+nn) / (PC+nn), reg16
+    ldw (sp+1000h), hl
+    ldw (pc+1000h), ix
+    ldw (sp+1000h), iy
+
+    ; LDW reg16, (IX+nn) / (IY+nn) / (HL+nn)
+    ldw hl, (ix+1000h)
+    ldw ix, (iy+1000h)
+    ldw iy, (hl+1000h)
+
+    ; LDW (IX+nn) / (IY+nn) / (HL+nn), reg16
+    ldw (ix+1000h), hl
+    ldw (iy+1000h), ix
+    ldw (hl+1000h), iy
+
+    ; LDW reg16, (nn)
+    ldw bc, (1000h)
+    ldw ix, (1000h)
+
+    ; LDW (nn), reg16
+    ldw (1000h), de
+    ldw (1000h), iy
+
+    ; LDW (HL)/(PC)/(nn), nn
+    ldw (hl), 1000h
+    ldw (pc+100h), 1000h
+    ldw (1000h), 1000h
+
+    ; LDW reg16, nn
+    ldw bc, 1000h
+    ldw ix, 1000h
+
+    ; LDW SP, reg16
+    ldw sp, hl
+    ldw sp, ix
+
+    end

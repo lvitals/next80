@@ -1,0 +1,39 @@
+; n80 test: Conditionals and Passes
+    org 100h
+
+    if1
+    .print Pass 1: evaluating {10+20:D}
+    endif
+
+    if2
+    .print Pass 2: address is {$:H}
+    endif
+
+    ifabs
+    .print [IFABS] This is absolute mode
+    else
+    .print [ELSE] This is NOT absolute mode
+    endif
+
+    ifrel
+    .print [IFREL] This is relative mode
+    else
+    .print [ELSE] This is NOT relative mode
+    endif
+
+FEATURE_ENABLED equ 1
+
+    if FEATURE_ENABLED
+    ld a, 1
+    else
+    ld a, 0
+    endif
+
+    ifdef UNDEFINED_SYMBOL
+    ld b, 1
+    else
+    ld b, 0
+    endif
+
+    ret
+    end

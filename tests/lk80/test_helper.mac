@@ -1,0 +1,6 @@
+	AREA _CODE
+	PUBLIC _helper
+_helper:
+	LD L, E
+	LD H, D
+	RET

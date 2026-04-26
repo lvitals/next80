@@ -1,0 +1,25 @@
+	org 100h
+	
+	; REPT test
+	X defl 0
+	rept 3
+	X defl X+1
+	db X
+	endm
+	
+	; IRP test
+	irp Y, <10, 20, 30>
+	db Y
+	endm
+	
+	; IRPC test
+	irpc Z, ABC
+	db "&Z"
+	endm
+	
+	; IRPS test
+	irps W, "123"
+	db W
+	endm
+	
+	end

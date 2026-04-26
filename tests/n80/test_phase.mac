@@ -1,0 +1,24 @@
+	name	('test_phase')
+
+	.z80
+	org	100h
+
+main_start:
+	ld	hl, driver_code
+	ld	de, 0C000h
+	ld	bc, driver_end - driver_code
+	ldir
+	jp	0C000h
+
+driver_code:
+	.phase	0C000h
+	
+	ld	a, 1
+	out	(0D0h), a
+	ret
+
+	.dephase
+driver_end:
+
+	nop
+	end	main_start

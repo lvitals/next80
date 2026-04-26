@@ -1,0 +1,34 @@
+; n80 test: Macros, Repetitions, EXITM and CONTM
+    NAME 'MACROS'
+    org 100h
+
+; EXITM in macro
+EXITMAC macro skip
+    db 1
+    if skip
+    exitm
+    endif
+    db 2
+    endm
+
+    .print Testing EXITM: should print 01
+    EXITMAC 1
+    
+    .print Testing EXITM: should print 01 02
+    EXITMAC 0
+
+; CONTM and EXITM in REPT
+    .print Testing CONTM and EXITM in REPT:
+    rept 5
+    db %$ ; current address
+    if $ == 107h
+    contm
+    endif
+    if $ == 109h
+    exitm
+    endif
+    db 0AAh
+    endm
+
+    ret
+    end

@@ -1,0 +1,5 @@
+    cseg
+rom_st:
+    jp 0
+    ds 05h-($-rom_st),0
+    end

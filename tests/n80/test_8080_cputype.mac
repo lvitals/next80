@@ -1,0 +1,9 @@
+    nop
+.cpu 8080
+    rlc
+.cpu z80
+    rlca
+.8080
+    rrc
+.z80
+    rrca

@@ -1,0 +1,56 @@
+; lk80/n80 integration test: pending Z280 parity cases from PORT_C_ROADMAP.md
+    org 0
+    .cpu Z280
+
+; ---- LDA double-index fixed forms ----
+    lda hl,(hl+ix)
+    lda hl,(hl+iy)
+    lda hl,(ix+iy)
+    lda ix,(hl+ix)
+    lda ix,(hl+iy)
+    lda ix,(ix+iy)
+    lda iy,(hl+ix)
+    lda iy,(hl+iy)
+    lda iy,(ix+iy)
+
+; ---- LDA address forms ----
+    lda hl,(1234h)
+    lda hl,(hl+1)
+    lda hl,(ix+2)
+    lda hl,(iy-3)
+    lda hl,(pc+4)
+    lda hl,(sp+5)
+
+    lda ix,(1234h)
+    lda ix,(hl+1)
+    lda ix,(ix+2)
+    lda ix,(iy-3)
+    lda ix,(pc+4)
+    lda ix,(sp+5)
+
+    lda iy,(1234h)
+    lda iy,(hl+1)
+    lda iy,(ix+2)
+    lda iy,(iy-3)
+    lda iy,(pc+4)
+    lda iy,(sp+5)
+
+; ---- LDCTL forms ----
+    ldctl (c),hl
+    ldctl (c),ix
+    ldctl (c),iy
+    ldctl hl,(c)
+    ldctl ix,(c)
+    ldctl iy,(c)
+    ldctl hl,usp
+    ldctl ix,usp
+    ldctl iy,usp
+    ldctl usp,hl
+    ldctl usp,ix
+    ldctl usp,iy
+
+; ---- TSET indexed forms ----
+    tset (ix+7)
+    tset (iy-8)
+
+    end

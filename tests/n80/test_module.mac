@@ -1,0 +1,30 @@
+	name	('test_module')
+
+	.z80
+	org	100h
+
+global_label:
+	call	MOD1.init
+	call	MOD2.init
+	jp	global_label
+
+module MOD1
+
+init:
+	ld	a, 1
+	ret
+
+val1	equ	10
+
+endmod
+
+module MOD2
+
+init:
+	ld	a, 2
+	ld	b, MOD1.val1	; Reference symbol from another module
+	ret
+
+endmod
+
+	end	global_label

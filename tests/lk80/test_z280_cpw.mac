@@ -1,0 +1,18 @@
+; lk80/n80 integration test: Z280 CPW
+    org 0
+    .cpu Z280
+
+    cpw hl,bc
+    cpw hl,de
+    cpw hl,hl
+    cpw hl,ix
+    cpw hl,iy
+    cpw hl,sp
+    cpw hl,(hl)
+    cpw hl,(ix+1)
+    cpw hl,(iy-2)
+    cpw hl,(pc+3)
+    cpw hl,(1234h)
+    cpw hl,1234h
+
+    end

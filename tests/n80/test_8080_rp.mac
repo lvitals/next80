@@ -1,0 +1,17 @@
+.8080
+    dad b
+    dad d
+    dad h
+    dad sp
+    inx b
+    inx d
+    dcx h
+    dcx sp
+    lxi b,1234h
+    lxi d,5678h
+    lxi h,0ABCDh
+    lxi sp,0
+    ldax b
+    ldax d
+    stax b
+    stax d
