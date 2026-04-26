@@ -1,0 +1,8 @@
+    aseg
+    org 0100h
+start:
+    jp start
+    db "Hello"
+    org 0200h
+    db 42h
+    end

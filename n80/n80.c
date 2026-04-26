@@ -1665,7 +1665,7 @@ enum opertr_
 int eval_int[EVAL_MAXIMUM], eval_int_seg[EVAL_MAXIMUM], eval_int_lbl[EVAL_MAXIMUM], eval_ints, eval_ops;
 char eval_op[EVAL_MAXIMUM], eval_pr[EVAL_MAXIMUM];
 // Indexed by EVAL_* enum values (0-29). EVAL_P_INIT(28) and EVAL_P_EXIT(29) use priority 0.
-char eval_priorities[] = {5, 5, 5, 5, 5, 4, 4, 4, 4, 4, 4, 3, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0};
+char eval_priorities[] = {0, 5, 5, 5, 5, 5, 5, 5, 4, 4, 4, 4, 4, 4, 3, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 0, 0};
 // INLINE int eval_priority(int i) { return (i<EVAL_UNARIES)+(i<EVAL_BINARY_H)+(i<EVAL_BINARY_M)+(i<EVAL_BINARY_L)+(i<EVAL_BINARIES); }
 void eval_start_rpn(void)
 {

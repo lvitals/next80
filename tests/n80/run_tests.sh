@@ -305,6 +305,12 @@ run_bin_test "test_8080_new.mac"     "c610ce207676"
 run_bin_test "test_dc.mac"           "4142c3da4127c251"
 
 echo ""
+echo "--- Expression and Absolute mode tests ---"
+EXPECTED_ABS="c3000148656c6c6f$(printf '0%.0s' {1..496})42"
+run_bin_test "test_abs_mode.mac" "$EXPECTED_ABS"
+run_bin_test "test_expr_associativity.mac" "4c1b0314"
+
+echo ""
 echo "--- SDCC output tests ---"
 run_sdcc_basic_test
 run_sdcc_reloc_test
