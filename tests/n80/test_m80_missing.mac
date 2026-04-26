@@ -1,0 +1,33 @@
+; n80 test: M80 compatibility — SBB, EXT, IFF, SET directive
+    cseg
+
+; --- SBB (8080 subtract with borrow, alias for SBC A,r) ---
+    .8080
+    sbb a       ; 0x9F
+    sbb b       ; 0x98
+    sbb d       ; 0x9A
+    sbb m       ; 0x9E  (M = (HL))
+    .z80
+
+; --- EXT (alias for EXTRN) ---
+    ext EXTFUNC
+
+; --- IFF (if false — assembles block when expression is zero) ---
+ZERO equ 0
+ONE  equ 1
+
+    iff ZERO    ; ZERO=0 → condition false → IFF assembles block
+    ld a, 1
+    endif
+
+    iff ONE     ; ONE=1 → condition true → IFF skips block
+    ld a, 0     ; must NOT be assembled
+    endif
+
+; --- SET directive (M80 redefinable symbol, alias for DEFL) ---
+COUNTER set 10
+COUNTER set 20  ; redefinition must not error
+
+    ld b, COUNTER  ; must load 20
+
+    end

@@ -1430,7 +1430,7 @@ void split_input(void)
 		is_label = 1;
 	else if (*p == ':')
 		is_label = 1;
-	else if (*next && (strncasecmp((char *)next, "equ", 3) == 0 || strncasecmp((char *)next, "defl", 4) == 0 || strncasecmp((char *)next, "macro", 5) == 0))
+	else if (*next && (strncasecmp((char *)next, "equ", 3) == 0 || strncasecmp((char *)next, "defl", 4) == 0 || strncasecmp((char *)next, "macro", 5) == 0 || strncasecmp((char *)next, "set", 3) == 0))
 		is_label = 1;
 
 	saved_p = *p;
@@ -1448,7 +1448,8 @@ void split_input(void)
 		// Only treat as label if followed by EQU/DEFL/MACRO
 		if (!( (strncasecmp((char *)next, "equ", 3) == 0 && !iseither(next[3])) ||
 		       (strncasecmp((char *)next, "defl", 4) == 0 && !iseither(next[4])) ||
-		       (strncasecmp((char *)next, "macro", 5) == 0 && !iseither(next[5])) ))
+		       (strncasecmp((char *)next, "macro", 5) == 0 && !iseither(next[5])) ||
+		       (strncasecmp((char *)next, "set", 3) == 0 && !iseither(next[3])) ))
 			is_label = 0; // It's an opcode at column 1
 	}
 
@@ -2420,6 +2421,7 @@ enum opcode_
 	PSEUDO_IF,
 	PSEUDO_IF1,
 	PSEUDO_IF2,
+	PSEUDO_IFF,
 	PSEUDO_IFABS,
 	PSEUDO_IFREL,
 	PSEUDO_IFCPU,
@@ -2605,6 +2607,7 @@ t_opcode opcode[] = {
 	{"ex", 0, OPCODE_EX},
 	{"exa", 0x08, OPCODE_COPY1}, // RASM synonym
 	{"exitm", 0, PSEUDO_EXITM},
+	{"ext", 0, PSEUDO_EXTRN},
 	{"external", 0, PSEUDO_EXTRN},
 	{"extrn", 0, PSEUDO_EXTRN},
 	{"exx", 0xD9, OPCODE_COPY1},
@@ -2623,6 +2626,7 @@ t_opcode opcode[] = {
 	{"ifdif", 0, PSEUDO_IFDIF},
 	{"ifdifi", 0, PSEUDO_IFDIFI},
 	{"ifdef", 0, PSEUDO_IFDEF},
+	{"iff", 0, PSEUDO_IFF},
 	{"ifidn", 0, PSEUDO_IFIDN},
 	{"ifidni", 0, PSEUDO_IFIDNI},
 	{"ifnb", 0, PSEUDO_IFNB},
@@ -2713,6 +2717,7 @@ t_opcode opcode[] = {
 	{"rrca", 0x0F, OPCODE_COPY1},
 	{"rrd", 0xED67, OPCODE_COPY2},
 	{"rst", 0, OPCODE_RST},
+	{"sbb", +1, OPCODE_ADC},
 	{"sc", 0, OPCODE_SC},
 	{"sbc", +1, OPCODE_ADC},
 	{"scf", 0x37, OPCODE_COPY1},
@@ -3370,6 +3375,7 @@ int get_parmtr_sub(int i)
 	case PARMTR_L:
 		return 5;
 	case PARMTR_P_HL:
+	case PARMTR_S:  // 8080 'M' alias for (HL)
 		return 6;
 	case PARMTR_A:
 		return 7;
@@ -5286,7 +5292,7 @@ int assemble_input(void) // 0 OK, !0 ERROR
 
 		// IF, ELSE, ENDIF — always processed regardless of condition0, so nested IFs inside
 		// skipped blocks still push/pop the conditions stack correctly.
-		if (o == PSEUDO_IF || o == PSEUDO_ELIF || o == PSEUDO_IFIDN || o == PSEUDO_IFIDNI || o == PSEUDO_IFDIF || o == PSEUDO_IFDIFI || o == PSEUDO_IFNB || o == PSEUDO_IFB || o == PSEUDO_IFDEF || o == PSEUDO_IFNDEF || o == PSEUDO_IF1 || o == PSEUDO_IF2 || o == PSEUDO_IFABS || o == PSEUDO_IFREL || o == PSEUDO_IFCPU || o == PSEUDO_IFNCPU)
+		if (o == PSEUDO_IF || o == PSEUDO_ELIF || o == PSEUDO_IFIDN || o == PSEUDO_IFIDNI || o == PSEUDO_IFDIF || o == PSEUDO_IFDIFI || o == PSEUDO_IFNB || o == PSEUDO_IFB || o == PSEUDO_IFDEF || o == PSEUDO_IFNDEF || o == PSEUDO_IF1 || o == PSEUDO_IF2 || o == PSEUDO_IFABS || o == PSEUDO_IFREL || o == PSEUDO_IFCPU || o == PSEUDO_IFNCPU || o == PSEUDO_IFF)
 		{
 			if (o == PSEUDO_ELIF)
 			{
@@ -5305,9 +5311,9 @@ int assemble_input(void) // 0 OK, !0 ERROR
 				j = 2;
 			else if (!j)
 			{
-				if (o == PSEUDO_IF || o == PSEUDO_ELIF)
+				if (o == PSEUDO_IF || o == PSEUDO_ELIF || o == PSEUDO_IFF)
 				{
-					j = !eval((char *)split_parmtr);
+					int res = eval((char *)split_parmtr);
 					if (eval_status < 0)
 						FATAL_ERROR(error_invalid_expression);
 					if (eval_status > 0 && pass == 1)
@@ -5317,6 +5323,8 @@ int assemble_input(void) // 0 OK, !0 ERROR
 					}
 					else if (eval_status > 0)
 						FATAL_ERROR(error_undefined_symbol);
+					else
+						j = (o == PSEUDO_IFF) ? !!res : !res;
 				}
 				else if (o == PSEUDO_IF1)
 				{
@@ -5440,8 +5448,10 @@ int assemble_input(void) // 0 OK, !0 ERROR
 
 				if (!isletter(*(char *)split_symbol) || get_parmtr((char *)split_symbol) >= 0)
 					FATAL_ERROR(error_invalid_symbol);
-				// <label> EQU <expression>
-				if (o == PSEUDO_EQU || o == PSEUDO_DEFL)
+				// <label> EQU/DEFL/SET <expression>
+				// M80 SET: "SYMBOL SET value" — same as DEFL (redefinable), only when no colon
+				int is_m80_set = (o == OPCODE_BIT && oo == 0xC0 && saved_p != ':' && saved_p != ';');
+				if (o == PSEUDO_EQU || o == PSEUDO_DEFL || is_m80_set)
 				{
 					if (flag_relab && split_symbol[0] != '.') {
 						strncpy(last_global_label, (char *)split_symbol, 255);
@@ -5455,7 +5465,7 @@ int assemble_input(void) // 0 OK, !0 ERROR
 							k = add_label(scoped_name, i, SEG_ASEG);
 							if (k < 0) return -1;
 							if (saved_p == ';') label_flag[k] |= LBL_PUBLIC;
-						} else if (o == PSEUDO_DEFL) {
+						} else { // PSEUDO_DEFL or M80 SET → redefinable
 							k = set_label(scoped_name, i, SEG_ASEG);
 							if (k < 0) return -1;
 							if (saved_p == ';') label_flag[k] |= LBL_PUBLIC;
