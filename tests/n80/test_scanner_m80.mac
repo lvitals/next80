@@ -1,0 +1,23 @@
+; n80 test: scanner M80 compatibility
+;   Tests that punctuation (/, !, etc.) terminates opcode token scanning
+;   even when the directive is at column 1 (no leading space).
+
+        .8080
+
+; 1. Classic form: space between directive and delimiter
+        .PRINTX /TESTE 1: COM ESPACO - OK/
+
+; 2. Critical: no space before slash (column 1)
+.PRINTX/TESTE 2: SEM ESPACO COM BARRA - OK/
+
+; 3. No space before exclamation (column 1)
+.PRINTX!TESTE 3: SEM ESPACO COM EXCLAMACAO - OK!
+
+; 4. RET followed immediately by comment (semicolon stripped before scan)
+        RET;FIM DA SUBROTINA
+
+; 5. Regression: octal and Intel hex still work
+        CPI     12Q
+        ANI     X'7F'
+
+        END

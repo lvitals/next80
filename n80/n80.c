@@ -1400,7 +1400,7 @@ void split_input(void)
 		return;
 
 	unsigned char *p = first;
-	while ((unsigned char)*p > 32 && *p != ':' && *p != '(')
+	while ((unsigned char)*p > 32 && iseither(*p))
 		p++;
 
 	if (*p == '(') {
@@ -1412,7 +1412,7 @@ void split_input(void)
 		*p = saved;
 		if (!is_op && !is_ma) {
 			// Not a known opcode, continue searching for space or colon
-			while ((unsigned char)*p > 32 && *p != ':')
+			while ((unsigned char)*p > 32 && iseither(*p))
 				p++;
 		}
 	}
@@ -1461,15 +1461,8 @@ void split_input(void)
 		s = split_opcode;
 		int split1_nonword = 0;
 		while ((unsigned char)*s > 32 && *s != '(') {
+			if (!iseither(*s)) { split1_nonword = 1; break; }
 			s++;
-			// M80 compat: stop if next char can't be part of an opcode name
-			// AND the accumulated token is already a known opcode (e.g. .PRINTX/text/)
-			if (*s && *s != '(' && (unsigned char)*s > 32 && !iseither(*s)) {
-				char saved2 = *s; *s = 0;
-				int known = (get_opcode((char *)split_opcode) >= 0 || get_macro((char *)split_opcode) >= 0);
-				*s = saved2;
-				if (known) { split1_nonword = 1; break; }
-			}
 		}
 		if (*s == '(')
 		{
@@ -1526,13 +1519,8 @@ void split_input(void)
 		s = split_opcode;
 		int split2_nonword = 0;
 		while ((unsigned char)*s > 32 && *s != '(') {
+			if (!iseither(*s)) { split2_nonword = 1; break; }
 			s++;
-			if (*s && *s != '(' && (unsigned char)*s > 32 && !iseither(*s)) {
-				char saved2 = *s; *s = 0;
-				int known = (get_opcode((char *)split_opcode) >= 0 || get_macro((char *)split_opcode) >= 0);
-				*s = saved2;
-				if (known) { split2_nonword = 1; break; }
-			}
 		}
 		if (*s == '(')
 		{
