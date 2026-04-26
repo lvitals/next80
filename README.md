@@ -250,4 +250,4 @@ The assembler language supported by MACRO-80 is genuinely complex — macros, co
 
 ## License
 
-See [LICENSE](Nestor80/LICENSE).
+See [LICENSE](https://github.com/lvitals/next80/blob/main/LICENSE).
