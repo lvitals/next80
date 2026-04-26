@@ -125,6 +125,7 @@ int current_seg = SEG_ASEG;
 int seg_target[4] = {0, 0, 0, 0};
 int seg_max[4] = {0, 0, 0, 0};
 int target, origin, remote, dollar, dollar_seg, flag_dollar = 0, flag_z = 1;
+int min_target = 0xFFFF, max_target = 0;
 int flag_sdcc = 0;
 int eval_res_seg, eval_res_lbl;
 int entry_point = 0, entry_seg = SEG_ASEG;
@@ -717,7 +718,11 @@ static int sdcc_write_output(const char *source_name, const char *target_name)
 
 unsigned char write_rel_byte_helper(unsigned char b)
 {
-	sdcc_record_byte(target > 0 ? target - 1 : target, b);
+	if (pass == 2) {
+		if (target < min_target) min_target = target;
+		if (target >= max_target) max_target = target + 1;
+	}
+	sdcc_record_byte(target, b);
 	write_rel_byte(b);
 	if (phase_active)
 		phase_target++;
@@ -726,7 +731,11 @@ unsigned char write_rel_byte_helper(unsigned char b)
 
 unsigned char write_output_byte_only(unsigned char b)
 {
-	sdcc_record_byte(target > 0 ? target - 1 : target, b);
+	if (pass == 2) {
+		if (target < min_target) min_target = target;
+		if (target >= max_target) max_target = target + 1;
+	}
+	sdcc_record_byte(target, b);
 	if (phase_active)
 		phase_target++;
 	return b;
@@ -775,8 +784,8 @@ unsigned char record_and_write_output_byte_only(unsigned char b) {
     return write_output_byte_only(b);
 }
 
-#define NEXTBYTE(val) (output[target++] = record_and_write_rel_byte(val))
-#define NEXTBYTE_OUTPUT(val) (output[target++] = record_and_write_output_byte_only(val))
+#define NEXTBYTE(val) do { output[target] = record_and_write_rel_byte(val); target++; } while(0)
+#define NEXTBYTE_OUTPUT(val) do { output[target] = record_and_write_output_byte_only(val); target++; } while(0)
 
 static void append_byte_to_buffer(unsigned char **buf, int *len, int *cap, unsigned char b)
 {
@@ -6197,6 +6206,7 @@ int assemble(char *s, char *t) // assemble source `s` to target `t`; 0 OK, !0 ER
 
 	for (pass = 1; pass <= 2; pass++) {
 		inputs = params = locals = doubts = chains = dollar = target = origin = remote = recording = conditions = condition0 = 0;
+		min_target = 0xFFFF; max_target = 0;
 		rept_count = 0;
 		memset(rept_remain, 0, sizeof(rept_remain));
 		rel_bits = rel_pos = 0;
@@ -6304,6 +6314,31 @@ int assemble(char *s, char *t) // assemble source `s` to target `t`; 0 OK, !0 ER
 
 	if (flag_sdcc)
 		return sdcc_write_output(s, t);
+
+	if (flag_z == 0)
+	{
+		// Absolute mode: write the memory map
+		if (max_target < min_target) {
+			min_target = 0;
+			max_target = 0;
+		}
+		FILE *f = stdout;
+		if (strcmp(t, "-"))
+			if (!(f = fopen(t, "wb")))
+				FATAL_ERROR(error_cannot_create_file);
+		i = fwrite(&output[min_target], 1, j = (max_target - min_target), f);
+		if (f != stdout)
+			fclose(f);
+		if (i != j)
+			FATAL_ERROR(error_cannot_write_data);
+		if (flag_v >= 0)
+			fprintf(stderr, "%s:%s (%i bytes)\n", s, t, j);
+		if (listing_f) {
+			fclose(listing_f);
+			listing_f = NULL;
+		}
+		return 0;
+	}
 
 	// Finalize .REL bitstream
 	// 1. Escrever tamanhos de segmentos

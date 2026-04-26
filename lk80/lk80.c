@@ -1317,7 +1317,8 @@ int main(int argc, char *argv[]) {
                         if (ctrl == 8) pending_offset = -(int)(short)val;
                         else if (ctrl == 9) pending_offset = (int)(short)val;
                         else if (ctrl == 11) {
-                            if (seg == ADDR_ASEG || seg == ADDR_CSEG) current_pc = val + (mod ? mod->cseg_offset : 0);
+                            if (seg == ADDR_ASEG) current_pc = val;
+                            else if (seg == ADDR_CSEG) current_pc = val + (mod ? mod->cseg_offset : 0);
                             else if (seg == ADDR_DSEG) current_pc = val + (mod ? mod->dseg_offset : 0);
                             else if (seg == ADDR_COMMON && current_common_idx >= 0) current_pc = val + commons[current_common_idx].base_addr;
                         } else if (ctrl == 14) need_new_module = 1;
