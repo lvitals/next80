@@ -231,7 +231,8 @@ for t in \
     test_extroot.mac \
     test_z280_addr.mac \
     test_z280_double.mac \
-    test_z280_io.mac
+    test_z280_io.mac \
+    test_m80_compat.mac
 do
     run_rel_test "$t"
 done

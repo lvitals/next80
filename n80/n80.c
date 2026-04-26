@@ -2600,6 +2600,7 @@ t_opcode opcode[] = {
 	{"endif", 0, PSEUDO_ENDIF},
 	{"endm", 0, PSEUDO_ENDM},
 	{"endmod", 0, PSEUDO_ENDMOD},
+	{"entry", 0, PSEUDO_PUBLIC},
 	{"equ", 0, PSEUDO_EQU},
 	{"ex", 0, OPCODE_EX},
 	{"exa", 0x08, OPCODE_COPY1}, // RASM synonym
@@ -2628,6 +2629,7 @@ t_opcode opcode[] = {
 	{"ifncpu", 0, PSEUDO_IFNCPU},
 	{"ifndef", 0, PSEUDO_IFNDEF},
 	{"ifrel", 0, PSEUDO_IFREL},
+	{"ift", 0, PSEUDO_IF},
 	{"im", 0, OPCODE_IM},
 	{"in", 0, OPCODE_IN},
 	{"ind", 0xEDAA, OPCODE_COPY2},

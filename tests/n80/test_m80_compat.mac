@@ -1,0 +1,21 @@
+; n80 test: M80 compatibility aliases (ENTRY = PUBLIC, IFT = IF)
+    cseg
+
+start:
+    ld a, 1
+
+; ENTRY is an alias for PUBLIC
+    entry start
+
+; IFT is an alias for IF
+flag equ 1
+
+    ift flag
+    ld b, 1
+    endif
+
+    ift 0
+    ld b, 0     ; must NOT be assembled
+    endif
+
+    end
