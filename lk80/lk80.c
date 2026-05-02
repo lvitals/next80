@@ -150,9 +150,8 @@ static int            sdcc_global_area_count = 0;
 static SdccAreaInst   mod_area_insts[MAX_MODULES][MAX_AREAS_PER_MODULE];
 static int            mod_area_inst_count[MAX_MODULES];
 
-/* External (Ref) symbol names per module, indexed by local symbol index.
- * Local symbol index 0 = .__.ABS. (always, not stored here).
- * Local symbol index 1..n = mod_ext_syms[m][0..n-1]. */
+/* Symbol names per SDCC module, indexed exactly as the module's S records.
+ * Relocation records reference this local symbol table directly. */
 static char mod_ext_syms[MAX_MODULES][MAX_EXTSYMS_PER_MOD][64];
 static int  mod_ext_sym_count[MAX_MODULES];
 
@@ -363,6 +362,26 @@ static int find_area_arg(const char *name) {
         if (strcasecmp(area_args[i].name, name) == 0)
             return i;
     return -1;
+}
+
+static int resolve_sdcc_area_symbol(const char *name, unsigned int *value) {
+    if (!name || strlen(name) < 4 || name[1] != '_' || name[2] != '_')
+        return 0;
+    char area_name[64];
+    snprintf(area_name, sizeof(area_name), "_%s", name + 3);
+    for (int i = 0; i < sdcc_global_area_count; i++) {
+        if (strcasecmp(sdcc_global_areas[i].name, area_name) == 0) {
+            if (name[0] == 's' || name[0] == 'S') {
+                *value = sdcc_global_areas[i].base;
+                return 1;
+            }
+            if (name[0] == 'l' || name[0] == 'L') {
+                *value = sdcc_global_areas[i].size;
+                return 1;
+            }
+        }
+    }
+    return 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -619,11 +638,13 @@ static int xlf_pass1(const char *fname, unsigned int code_base) {
             char defref[16] = {0};
             if (sscanf(line + 2, "%63s %15s", sname, defref) != 2) continue;
 
+            if (mod_ext_sym_count[m] < MAX_EXTSYMS_PER_MOD) {
+                snprintf(mod_ext_syms[m][mod_ext_sym_count[m]], 64, "%s", sname);
+                mod_ext_sym_count[m]++;
+            }
+
             if (strncasecmp(defref, "Ref", 3) == 0) {
-                if (strcasecmp(sname, ".__.ABS.") != 0 && mod_ext_sym_count[m] < MAX_EXTSYMS_PER_MOD) {
-                    snprintf(mod_ext_syms[m][mod_ext_sym_count[m]], 64, "%s", sname);
-                    mod_ext_sym_count[m]++;
-                }
+                /* References are resolved during pass 2. */
             } else if (strncasecmp(defref, "Def", 3) == 0) {
                 /* Public definition */
                 if (strcasecmp(sname, ".__.ABS.") == 0) continue;
@@ -664,15 +685,17 @@ static void xlf_pass2(const char *fname, int mod_start, int num_mods,
     int have_t = 0;
     unsigned char t_bytes[XLF_LINE_MAX];
     unsigned char r_bytes[XLF_LINE_MAX];
+    int xlf_addr_size = 3;
 
     while (fgets(line, sizeof(line), f)) {
         int len = (int)strlen(line);
         while (len > 0 && (line[len-1] == '\r' || line[len-1] == '\n')) line[--len] = '\0';
 
-        if (strncmp(line, "XL", 2) == 0 && (line[2]=='1'||line[2]=='2'||line[2]=='3')) {
+        if (strncmp(line, "XL", 2) == 0 && (line[2]=='1'||line[2]=='2'||line[2]=='3'||line[2]=='4')) {
             if (mods_seen >= num_mods) break;
             m = mod_start + mods_seen;
             mods_seen++;
+            xlf_addr_size = line[2] - '0';
             have_t = 0;
             continue;
         }
@@ -687,10 +710,13 @@ static void xlf_pass2(const char *fname, int mod_start, int num_mods,
             int r_len = xlf_parse_hex_bytes(line + 2, r_bytes, (int)(sizeof(r_bytes)));
             have_t = 0;
 
-            if (t_len < 3 || r_len < 4) continue;
+            if (t_len < xlf_addr_size || r_len < 4) continue;
 
-            /* T line: [lo hi 00 d3 d4 ...] — lo/hi is offset from area base */
-            unsigned int t_addr  = (unsigned int)t_bytes[0] | ((unsigned int)t_bytes[1] << 8);
+            /* T line starts with a little-endian address field:
+             * XL3 uses 3 bytes, XL4 uses 4 bytes. */
+            unsigned int t_addr = 0;
+            for (int bi = 0; bi < xlf_addr_size && bi < 4; bi++)
+                t_addr |= (unsigned int)t_bytes[bi] << (8 * bi);
 
             /* R line: [00 00 ai_lo ai_hi [flags off si_lo si_hi] ...] */
             int area_local_idx = (int)((unsigned int)r_bytes[2] | ((unsigned int)r_bytes[3] << 8));
@@ -709,9 +735,9 @@ static void xlf_pass2(const char *fname, int mod_start, int num_mods,
                 nrelocs++;
             }
 
-            /* Iterate through T data bytes (positions 3..t_len-1) */
+            /* Iterate through T data bytes after the address field. */
             int out_offset = 0;  /* byte offset in output from area_base + t_addr */
-            int ti = 3;
+            int ti = xlf_addr_size;
             while (ti < t_len) {
                 int found_reloc = -1;
                 for (int ri = 0; ri < nrelocs; ri++) {
@@ -730,11 +756,20 @@ static void xlf_pass2(const char *fname, int mod_start, int num_mods,
 
                     unsigned int base = 0;
                     if (is_sym) {
-                        if (ridx > 0) {
-                            int si = ridx - 1;
-                            if (si < mod_ext_sym_count[m]) {
-                                Symbol *s = find_symbol(mod_ext_syms[m][si]);
-                                if (s) base = resolve_symbol_abs(s);
+                        if (ridx >= 0 && ridx < mod_ext_sym_count[m]) {
+                            if (strcasecmp(mod_ext_syms[m][ridx], ".__.ABS.") != 0) {
+                                unsigned int area_sym_value = 0;
+                                if (resolve_sdcc_area_symbol(mod_ext_syms[m][ridx], &area_sym_value)) {
+                                    base = area_sym_value;
+                                } else {
+                                    Symbol *s = find_symbol(mod_ext_syms[m][ridx]);
+                                    if (s) {
+                                        base = resolve_symbol_abs(s);
+                                    } else if (verbose) {
+                                        fprintf(stderr, "lk80: unresolved symbol '%s' in %s\n",
+                                                mod_ext_syms[m][ridx], fname);
+                                    }
+                                }
                             }
                         }
                     } else {
@@ -756,7 +791,7 @@ static void xlf_pass2(const char *fname, int mod_start, int num_mods,
                             if (out_addr > *max_addr) *max_addr = out_addr;
                         }
                         out_offset++;
-                        ti += 3;
+                        ti += xlf_addr_size;
                     } else {
                         if (out_addr + 1 < OUTPUT_SIZE) {
                             output_buffer[out_addr]     = (unsigned char)(resolved & 0xFF);

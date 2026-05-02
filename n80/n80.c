@@ -529,8 +529,6 @@ static int sdcc_external_index_for_label(int lbl)
 				return idx;
 			idx++;
 		}
-		if (label_flag[i] & LBL_PUBLIC)
-			idx++;
 	}
 	return 0;
 }
@@ -916,6 +914,7 @@ int add_label(char *s, int n, int seg)					 // create label
 	memmove(&label[i + 1], &label[i], j);
 	memmove(&label_seg[i + 1], &label_seg[i], j);
 	memmove(&label_sdcc_area[i + 1], &label_sdcc_area[i], j);
+	memmove(&sdcc_symbol_index_by_label[i + 1], &sdcc_symbol_index_by_label[i], j);
 	memmove(&label_flag[i + 1], &label_flag[i], j);
 	memmove(&label_last_addr[i + 1], &label_last_addr[i], j);
 	memmove(&label_last_seg[i + 1], &label_last_seg[i], j);
