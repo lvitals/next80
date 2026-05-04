@@ -1,0 +1,18 @@
+	.z80
+RAM_BASE EQU 0F001h
+BUF_REC EQU 0F000h
+iy_off EQU BUF_REC-RAM_BASE
+iy_flag EQU 1
+
+	if iy_flag AND (iy_off GT 127) AND (iy_off LT -128)
+		.print "FAIL: Should not be here for -1"
+	else
+		.print "PASS: Correctly ignored -1"
+	endif
+
+	if iy_flag AND (128 GT 127) AND (128 LT 65408)
+		.print "PASS: Correctly identified 128 as out of range"
+	else
+		.print "FAIL: 128 should be out of range"
+	endif
+	end

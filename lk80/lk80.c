@@ -7,6 +7,7 @@
 
 char *opt_symbols_regex = NULL;
 int opt_color_output = 0;
+int link_errors = 0;
 #define CLR_RESET "\033[0m"
 #define CLR_RED   "\033[31m"
 #define CLR_GREEN "\033[32m"
@@ -38,17 +39,29 @@ int opt_color_output = 0;
 #define MAX_MODULES        1024
 #define MAX_COMMONS         256
 #define MAX_EXTERNAL_CHAINS 32768
-#define OUTPUT_SIZE       65536
+#define OUTPUT_SIZE       (1 << 24)
 #define RPN_STACK_SIZE      256
 
 /* MS-REL Extension Link Item Subtypes */
 #define EXT_ARITHMETIC_OP  0x41
 #define EXT_REF_EXTERNAL   0x42
 #define EXT_ADDRESS        0x43
+#define EXT_SET_ADL        0x44
 
 /* MS-REL Arithmetic Operator Codes */
 #define OP_STORE_AS_BYTE   1
 #define OP_STORE_AS_WORD   2
+#define OP_STORE_AS_24BIT  24  /* Custom extension for eZ80 */
+
+#define UPDATE_PC() do { \
+    if (flag_adl) { \
+        if (current_pc > 0xFFFFFF) { fprintf(stderr, "Error: Address overflow (24-bit limit exceeded at %06X)\n", current_pc); link_errors++; } \
+        current_pc &= 0xFFFFFF; \
+    } else { \
+        if (current_pc > 0xFFFF) { fprintf(stderr, "Error: Address overflow (16-bit limit exceeded at %04X)\n", current_pc); link_errors++; } \
+        current_pc &= 0xFFFF; \
+    } \
+} while(0)
 #define OP_HIGH            3
 #define OP_LOW             4
 #define OP_NOT             5
@@ -74,11 +87,13 @@ int opt_color_output = 0;
 #define XLF_AREA_OVR  0x04
 #define XLF_AREA_ABS  0x08
 
-/* XL3 relocation entry flags */
-#define XLF_REL_BYTE  0x01  /* byte output (3-byte T-line group) */
-#define XLF_REL_SYM   0x02  /* symbol reference (vs area reference) */
-#define XLF_REL_TWOB  0x08  /* 2-byte object format (used with BYTE for XL3) */
-#define XLF_REL_MSB   0x80  /* use high byte (for BYTE relocations) */
+/* XLF relocation entry flags */
+#define XLF_REL_BYTE   0x01  /* byte output (3-byte T-line group) */
+#define XLF_REL_SYM    0x02  /* symbol reference (vs area reference) */
+#define XLF_REL_TWOB   0x08  /* 2-byte object format (used with BYTE for XL3) */
+#define XLF_REL_THREEB 0x10  /* 3-byte object format (eZ80 ADL mode) */
+#define XLF_REL_MSB    0x80  /* use high byte (for BYTE relocations) */
+
 
 /* XL3 limits */
 #define MAX_SDCC_AREAS        512
@@ -185,6 +200,8 @@ static int          entry_seg = 0;
 
 static unsigned char output_buffer[OUTPUT_SIZE];
 static unsigned char output_touched[OUTPUT_SIZE];
+static unsigned char chain_links[OUTPUT_SIZE];
+static unsigned char chain_seen[OUTPUT_SIZE];
 
 typedef struct {
     char name[256];
@@ -192,6 +209,7 @@ typedef struct {
     unsigned int seg_offset;
     unsigned int seg_limit;
     int pending_offset;
+    int is_24bit;
 } ExternalChain;
 
 static ExternalChain external_chains[MAX_EXTERNAL_CHAINS];
@@ -752,7 +770,12 @@ static void xlf_pass2(const char *fname, int mod_start, int num_mods,
                     int is_msb  = (rflags & XLF_REL_MSB) ? 1 : 0;
 
                     unsigned int raw = 0;
-                    if (ti + 1 < t_len) raw = (unsigned int)t_bytes[ti] | ((unsigned int)t_bytes[ti + 1] << 8);
+                    int r_size = 2;
+                    if (rflags & XLF_REL_THREEB) r_size = 3;
+                    
+                    for (int i = 0; i < r_size; i++) {
+                        if (ti + i < t_len) raw |= (unsigned int)t_bytes[ti + i] << (8 * i);
+                    }
 
                     unsigned int base = 0;
                     if (is_sym) {
@@ -793,16 +816,16 @@ static void xlf_pass2(const char *fname, int mod_start, int num_mods,
                         out_offset++;
                         ti += xlf_addr_size;
                     } else {
-                        if (out_addr + 1 < OUTPUT_SIZE) {
-                            output_buffer[out_addr]     = (unsigned char)(resolved & 0xFF);
-                            output_buffer[out_addr + 1] = (unsigned char)(resolved >> 8);
-                            output_touched[out_addr] = 1;
-                            output_touched[out_addr + 1] = 1;
-                            if (out_addr < *min_addr)     *min_addr = out_addr;
-                            if (out_addr + 1 > *max_addr) *max_addr = out_addr + 1;
+                        for (int i = 0; i < r_size; i++) {
+                            if (out_addr + i < OUTPUT_SIZE) {
+                                output_buffer[out_addr + i] = (unsigned char)((resolved >> (8 * i)) & 0xFF);
+                                output_touched[out_addr + i] = 1;
+                                if (out_addr + i < *min_addr) *min_addr = out_addr + i;
+                                if (out_addr + i > *max_addr) *max_addr = out_addr + i;
+                            }
                         }
-                        out_offset += 2;
-                        ti += 2;
+                        out_offset += r_size;
+                        ti += r_size;
                     }
                 } else {
                     unsigned int out_addr = area_base + t_addr + (unsigned int)out_offset;
@@ -1021,9 +1044,10 @@ int main(int argc, char *argv[]) {
         init_module(mod, fname, file_code_base[i]);
 
         int need_new_module = 0;
-        int current_pc = 0;
-        int max_pc = 0;
+        unsigned int current_pc = 0;
+        unsigned int max_pc = 0;
         int has_cseg = 0;
+        int flag_adl = 0;
 
         while (1) {
             if (need_new_module) {
@@ -1035,6 +1059,7 @@ int main(int argc, char *argv[]) {
                 current_pc = 0;
                 max_pc = 0;
                 has_cseg = 0;
+                flag_adl = 0;
             }
 
             int first_bit = read_bit(&r);
@@ -1045,6 +1070,7 @@ int main(int argc, char *argv[]) {
                 mod->has_data = 1;
                 has_cseg = 1;
                 current_pc++;
+                UPDATE_PC();
                 if (current_pc > max_pc) max_pc = current_pc;
             } else {
                 int t2 = (int)read_bits(&r, 2);
@@ -1054,17 +1080,28 @@ int main(int argc, char *argv[]) {
                     if (ctrl <= 4) {
                         read_symbol(&r, sym, sizeof(sym));
                         if (ctrl == 2) snprintf(mod->name, sizeof(mod->name), "%s", sym);
-                        else if (ctrl == 4 && (unsigned char)sym[0] == 0x41) {
-                            int op = (unsigned char)sym[1];
-                            if (op == OP_STORE_AS_BYTE || op == OP_STORE_AS_WORD) {
-                                has_cseg = 1;
-                                current_pc += (op == OP_STORE_AS_WORD ? 2 : 1);
-                                if (current_pc > max_pc) max_pc = current_pc;
+                        else if (ctrl == 4) {
+                            unsigned char ext_type = (unsigned char)sym[0];
+                            if (ext_type == EXT_SET_ADL) {
+                                flag_adl = (unsigned char)sym[1];
+                                if (verbose) printf("ADL mode set to: %d\n", flag_adl);
+                            } else if (ext_type == EXT_ARITHMETIC_OP) {
+                                int op = (unsigned char)sym[1];
+                                if (op == OP_STORE_AS_BYTE || op == OP_STORE_AS_WORD || op == OP_STORE_AS_24BIT) {
+                                    has_cseg = 1;
+                                    int store_size = (op == OP_STORE_AS_24BIT ? 3 : (op == OP_STORE_AS_WORD ? 2 : 1));
+                                    current_pc += store_size;
+                                    UPDATE_PC();
+                                    if (current_pc > max_pc) max_pc = current_pc;
+                                }
                             }
                         }
                     } else if (ctrl <= 7) {
                         int seg = (int)read_bits(&r, 2);
                         unsigned int val = read_16le(&r);
+                        if (flag_adl && (ctrl == 6 || ctrl == 7)) {
+                            val |= (read_bits(&r, 8) << 16);
+                        }
                         read_symbol(&r, sym, sizeof(sym));
                         if (ctrl == 5) {
                             int ci = find_common(sym);
@@ -1085,17 +1122,24 @@ int main(int argc, char *argv[]) {
                                 s->segment = seg;
                                 s->module_index = module_count - 1;
                                 s->sdcc_area_local = -1;
+                                if (verbose) printf("Loaded symbol: %s = %06X (seg %d)\n", s->name, s->value, s->segment);
                             }
                         }
                     } else if (ctrl <= 14) {
                         int seg = (int)read_bits(&r, 2);
                         unsigned int val = read_16le(&r);
+                        if (flag_adl && (ctrl >= 8 && ctrl <= 14)) {
+                            val |= (read_bits(&r, 8) << 16);
+                        }
                         if (ctrl == 10) mod->dseg_size = val;
-                        else if (ctrl == 11 && (seg == ADDR_CSEG || seg == ADDR_ASEG)) current_pc = val;
+                        else if (ctrl == 11 && (seg == ADDR_CSEG || seg == ADDR_ASEG)) {
+                            current_pc = val;
+                            UPDATE_PC();
+                        }
                         else if (ctrl == 13) mod->cseg_size = val;
                         else if (ctrl == 14) {
                             if (mod->cseg_size == 0 && has_cseg) mod->cseg_size = max_pc;
-                            if (!entry_point_found && (val != 0 || seg != ADDR_ASEG) && val != 0xFFFF) {
+                            if (!entry_point_found && (val != 0 || seg != ADDR_ASEG) && val != 0xFFFFFF) {
                                 entry_point = val;
                                 entry_seg = seg;
                                 entry_point_found = 1;
@@ -1104,10 +1148,12 @@ int main(int argc, char *argv[]) {
                         }
                     } else break;
                 } else {
-                    read_bits(&r, 16);
+                    int addr_size = flag_adl ? 24 : 16;
+                    read_bits(&r, addr_size);
                     mod->has_data = 1;
                     has_cseg = 1;
-                    current_pc += 2;
+                    current_pc += (flag_adl ? 3 : 2);
+                    UPDATE_PC();
                     if (current_pc > max_pc) max_pc = current_pc;
                 }
             }
@@ -1196,7 +1242,7 @@ int main(int argc, char *argv[]) {
 
     memset(output_buffer, fill_byte, sizeof(output_buffer));
     memset(output_touched, 0, sizeof(output_touched));
-    unsigned int min_addr = 0xFFFF, max_addr = 0;
+    unsigned int min_addr = 0xFFFFFF, max_addr = 0;
     int mod_idx = 0;
 
     for (int i = 0; i < file_count; i++) {
@@ -1218,6 +1264,7 @@ int main(int argc, char *argv[]) {
         int mods_processed = 0;
         Module *mod = NULL;
         unsigned int current_pc = 0;
+        int flag_adl = 0;
         if (mods_processed < mods_in_this_file) {
             mod = &modules[mod_idx++];
             mods_processed++;
@@ -1237,6 +1284,7 @@ int main(int argc, char *argv[]) {
                     mod = &modules[mod_idx++];
                     mods_processed++;
                     rpn_sp = 0;
+                    flag_adl = 0;
                     current_common_idx = -1;
                     current_pc = mod->cseg_offset;
                     pending_offset = 0;
@@ -1256,6 +1304,7 @@ int main(int argc, char *argv[]) {
                     if (current_pc > max_addr) max_addr = current_pc;
                 }
                 current_pc++;
+                UPDATE_PC();
             } else {
                 int t2 = (int)read_bits(&r, 2);
                 if (t2 == 0) {
@@ -1265,7 +1314,10 @@ int main(int argc, char *argv[]) {
                         read_symbol(&r, sym, sizeof(sym));
                         if (ctrl == 1) {
                             current_common_idx = find_common(sym);
-                            if (current_common_idx >= 0) current_pc = commons[current_common_idx].base_addr;
+                            if (current_common_idx >= 0) {
+                                current_pc = commons[current_common_idx].base_addr;
+                                UPDATE_PC();
+                            }
                         } else if (ctrl == 4) {
                             unsigned char ext_type = (unsigned char)sym[0];
                             if (ext_type == EXT_REF_EXTERNAL) {
@@ -1275,26 +1327,31 @@ int main(int argc, char *argv[]) {
                             } else if (ext_type == EXT_ADDRESS) {
                                 int addr_seg = (unsigned char)sym[1];
                                 unsigned int addr_val = (unsigned char)sym[2] | ((unsigned char)sym[3] << 8);
+                                if (flag_adl) {
+                                    addr_val |= ((unsigned char)sym[4] << 16);
+                                }
                                 if (addr_seg == ADDR_CSEG) addr_val += mod->cseg_offset;
                                 else if (addr_seg == ADDR_DSEG) addr_val += mod->dseg_offset;
                                 else if (addr_seg == ADDR_COMMON && current_common_idx >= 0) addr_val += commons[current_common_idx].base_addr;
                                 if (rpn_sp < RPN_STACK_SIZE) rpn_stack[rpn_sp++] = addr_val;
+                            } else if (ext_type == EXT_SET_ADL) {
+                                flag_adl = (unsigned char)sym[1];
                             } else if (ext_type == EXT_ARITHMETIC_OP) {
                                 int op = (unsigned char)sym[1];
-                                if (op == OP_STORE_AS_BYTE || op == OP_STORE_AS_WORD) {
+                                if (op == OP_STORE_AS_BYTE || op == OP_STORE_AS_WORD || op == OP_STORE_AS_24BIT) {
                                     unsigned int res = (rpn_sp > 0) ? rpn_stack[--rpn_sp] : 0;
-                                    if (current_pc < OUTPUT_SIZE) {
-                                        output_buffer[current_pc] = (unsigned char)(res & 0xFF);
-                                        output_touched[current_pc] = 1;
-                                        if (current_pc < min_addr) min_addr = current_pc;
-                                        if (current_pc > max_addr) max_addr = current_pc;
-                                        if (op == OP_STORE_AS_WORD && current_pc + 1 < OUTPUT_SIZE) {
-                                            output_buffer[current_pc + 1] = (unsigned char)(res >> 8);
-                                            output_touched[current_pc + 1] = 1;
-                                            if (current_pc + 1 > max_addr) max_addr = current_pc + 1;
+                                    int store_size = (op == OP_STORE_AS_24BIT ? 3 : (op == OP_STORE_AS_WORD ? 2 : 1));
+                                    if (current_pc + store_size <= OUTPUT_SIZE) {
+                                        for (int j = 0; j < store_size; j++) {
+                                            unsigned int patch_addr = (current_pc + j) & (flag_adl ? 0xFFFFFF : 0xFFFF);
+                                            output_buffer[patch_addr] = (unsigned char)((res >> (j * 8)) & 0xFF);
+                                            output_touched[patch_addr] = 1;
+                                            if (patch_addr < min_addr) min_addr = patch_addr;
+                                            if (patch_addr > max_addr) max_addr = patch_addr;
                                         }
                                     }
-                                    current_pc += (op == OP_STORE_AS_WORD ? 2 : 1);
+                                    current_pc += store_size;
+                                    UPDATE_PC();
                                 } else {
                                     unsigned int b = rpn_sp > 0 ? rpn_stack[--rpn_sp] : 0;
                                     unsigned int a = rpn_sp > 0 ? rpn_stack[--rpn_sp] : 0;
@@ -1324,13 +1381,20 @@ int main(int argc, char *argv[]) {
                             }
                         }
                     } else if (ctrl <= 7) {
-                        int seg = (int)read_bits(&r, 2); unsigned int val = read_16le(&r); read_symbol(&r, sym, sizeof(sym));
+                        int seg = (int)read_bits(&r, 2); 
+                        unsigned int val = read_16le(&r); 
+                        if (flag_adl && (ctrl == 6 || ctrl == 7)) {
+                            val |= (read_bits(&r, 8) << 16);
+                        }
+                        read_symbol(&r, sym, sizeof(sym));
                         if (ctrl == 6) {
+                            if (verbose) printf("Loaded external chain for '%s': start=%06X (seg %d), is_24bit=%d\n", sym, val, seg, flag_adl);
                             if (external_chain_count < MAX_EXTERNAL_CHAINS) {
                                 ExternalChain *chain = &external_chains[external_chain_count++];
                                 snprintf(chain->name, sizeof(chain->name), "%s", sym);
                                 chain->val = val;
                                 chain->pending_offset = pending_offset;
+                                chain->is_24bit = flag_adl;
                                 if (seg == ADDR_CSEG) {
                                     chain->seg_offset = mod->cseg_offset;
                                     chain->seg_limit = mod->cseg_offset + mod->cseg_size;
@@ -1348,30 +1412,40 @@ int main(int argc, char *argv[]) {
                             pending_offset = 0;
                         }
                     } else if (ctrl <= 14) {
-                        int seg = (int)read_bits(&r, 2); unsigned int val = read_16le(&r);
-                        if (ctrl == 8) pending_offset = -(int)(short)val;
-                        else if (ctrl == 9) pending_offset = (int)(short)val;
+                        int seg = (int)read_bits(&r, 2); 
+                        unsigned int val = read_16le(&r);
+                        if (flag_adl && (ctrl >= 8 && ctrl <= 14)) {
+                            val |= (read_bits(&r, 8) << 16);
+                        }
+                        if (ctrl == 8) pending_offset = -(int)val;
+                        else if (ctrl == 9) pending_offset = (int)val;
                         else if (ctrl == 11) {
                             if (seg == ADDR_ASEG) current_pc = val;
                             else if (seg == ADDR_CSEG) current_pc = val + (mod ? mod->cseg_offset : 0);
                             else if (seg == ADDR_DSEG) current_pc = val + (mod ? mod->dseg_offset : 0);
                             else if (seg == ADDR_COMMON && current_common_idx >= 0) current_pc = val + commons[current_common_idx].base_addr;
+                            UPDATE_PC();
                         } else if (ctrl == 14) need_new_module = 1;
                     } else break;
                 } else {
-                    unsigned int addr = read_bits(&r, 16);
+                    int addr_size = flag_adl ? 24 : 16;
+                    unsigned int addr = read_bits(&r, addr_size);
                     if (t2 == ADDR_CSEG) addr += mod->cseg_offset;
                     else if (t2 == ADDR_DSEG) addr += mod->dseg_offset;
                     else if (t2 == ADDR_COMMON && current_common_idx >= 0) addr += commons[current_common_idx].base_addr;
-                    if (current_pc + 1 < OUTPUT_SIZE) {
-                        output_buffer[current_pc] = (unsigned char)(addr & 0xFF);
-                        output_buffer[current_pc + 1] = (unsigned char)(addr >> 8);
-                        output_touched[current_pc] = 1;
-                        output_touched[current_pc + 1] = 1;
-                        if (current_pc < min_addr) min_addr = current_pc;
-                        if (current_pc + 1 > max_addr) max_addr = current_pc + 1;
+                    
+                    int store_bytes = flag_adl ? 3 : 2;
+                    if (current_pc + store_bytes <= OUTPUT_SIZE) {
+                        for (int j = 0; j < store_bytes; j++) {
+                            unsigned int patch_addr = (current_pc + j) & (flag_adl ? 0xFFFFFF : 0xFFFF);
+                            output_buffer[patch_addr] = (unsigned char)((addr >> (j * 8)) & 0xFF);
+                            output_touched[patch_addr] = 1;
+                            if (patch_addr < min_addr) min_addr = patch_addr;
+                            if (patch_addr > max_addr) max_addr = patch_addr;
+                        }
                     }
-                    current_pc += 2;
+                    current_pc += store_bytes;
+                    UPDATE_PC();
                 }
             }
         }
@@ -1379,7 +1453,6 @@ int main(int argc, char *argv[]) {
     }
 
     {
-        unsigned char chain_links[OUTPUT_SIZE];
         memcpy(chain_links, output_buffer, sizeof(chain_links));
 
         for (int i = 0; i < external_chain_count; i++) {
@@ -1389,27 +1462,33 @@ int main(int argc, char *argv[]) {
 
             unsigned int patch_val = resolve_symbol_abs(s) + (unsigned int)(int)chain->pending_offset;
             unsigned int chain_addr = chain->val + chain->seg_offset;
-            unsigned char chain_seen[OUTPUT_SIZE] = {0};
+
+            if (verbose) printf("Patching external '%s': val=%06X, start_addr=%06X, is_24bit=%d\n", chain->name, patch_val, chain_addr, chain->is_24bit);
+            memset(chain_seen, 0, sizeof(chain_seen));
 
             while (1) {
-                if (chain_addr + 1 >= OUTPUT_SIZE) break;
+                int patch_size = chain->is_24bit ? 3 : 2;
+                if (chain_addr + patch_size > OUTPUT_SIZE) break;
                 if (chain_seen[chain_addr]) {
-                    fprintf(stderr, "lk80 cycle detected: sym='%s' sym_val=%04X chain_addr=%04X seg_offset=%04X\n", s->name, patch_val, chain_addr, chain->seg_offset);
+                    fprintf(stderr, "lk80 cycle detected: sym='%s' sym_val=%06X chain_addr=%06X seg_offset=%06X\n", s->name, patch_val, chain_addr, chain->seg_offset);
                     break;
                 }
                 chain_seen[chain_addr] = 1;
 
                 unsigned int nxt = (unsigned int)chain_links[chain_addr] | ((unsigned int)chain_links[chain_addr + 1] << 8);
-                output_buffer[chain_addr] = (unsigned char)(patch_val & 0xFF);
-                output_buffer[chain_addr + 1] = (unsigned char)(patch_val >> 8);
-                output_touched[chain_addr] = 1;
-                output_touched[chain_addr + 1] = 1;
+                if (chain->is_24bit) nxt |= ((unsigned int)chain_links[chain_addr + 2] << 16);
+                if (verbose) printf("  at %06X, current link points to %06X\n", chain_addr, nxt);
+
+                for (int j = 0; j < patch_size; j++) {
+                    output_buffer[chain_addr + j] = (unsigned char)((patch_val >> (j * 8)) & 0xFF);
+                    output_touched[chain_addr + j] = 1;
+                }
                 if (chain_addr < min_addr) min_addr = chain_addr;
-                if (chain_addr + 1 > max_addr) max_addr = chain_addr + 1;
+                if (chain_addr + patch_size - 1 > max_addr) max_addr = chain_addr + patch_size - 1;
 
                 if (chain->pending_offset != 0 || nxt == 0) break;
                 unsigned int next_addr = nxt + chain->seg_offset;
-                if (next_addr < chain->seg_offset || next_addr + 1 >= chain->seg_limit) break;
+                if (next_addr < chain->seg_offset || next_addr + patch_size > chain->seg_limit) break;
                 chain_addr = next_addr;
             }
         }
@@ -1500,5 +1579,11 @@ int main(int argc, char *argv[]) {
         }
         if (use_regex) regfree(&regex);
     }
+
+    if (link_errors > 0) {
+        fprintf(stderr, "lk80: Finished with %d errors\n", link_errors);
+        return 1;
+    }
+
     return 0;
 }

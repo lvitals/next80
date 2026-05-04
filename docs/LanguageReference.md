@@ -166,7 +166,7 @@ An _operator_ is a word that can be either the mnemonic of a CPU instruction (e.
 
 The _comment_, if present, runs until the end of the line and has no effect in the assembly process. Multiline comments are supported by using the [`.COMMENT`](#comment) instruction.
 
-next80 supports Z80, R800 🆕 and Z280 🆕 CPU instructions, being Z80 the default CPU; a `.CPU R800` instruction can be used to enable support for R800 instructions, and likewise, `.CPU Z280` enables support for Z280 instructions (see also ["Z280 support"](Z280Support.md)). The 8080 CPU is not supported by next80. 🚫
+next80 supports Z80, R800 🆕, Z280 🆕 and eZ80 🆕 CPU instructions, being Z80 the default CPU; a `.CPU R800` instruction can be used to enable support for R800 instructions, and likewise, `.CPU Z280` enables support for Z280 instructions (see also ["Z280 support"](Z280Support.md)), and `.CPU EZ80` or `.ADL` enables support for eZ80 instructions (see also ["eZ80 support"](eZ80Support.md)). The 8080 CPU is not supported by next80. 🚫
 
 The arguments depend on the operator. For CPU instructions they will typically be one or two comma-separated values, each being either a CPU register name or an expression, for example `LD HL,BUFFER+1000h`. There are operators with mandatory arguments, others with no arguments defined, and others with optional arguments.
 
@@ -1340,7 +1340,7 @@ _Syntax:_ `.CPU <cpu name>`
 
 Changes the target CPU for the assembled code. The initial CPU is the Z80 by default, but this can be changed with the next80 argument `--default-cpu`.
 
-Currently the supported CPUs are `Z80` (default), `R800` and `Z280`. Setting the R800 as the target CPU simply enables the `MULUB` and `MULUW` instructions:
+Currently the supported CPUs are `Z80` (default), `R800`, `Z280` and `EZ80`. Setting the R800 as the target CPU simply enables the `MULUB` and `MULUW` instructions:
 
 ```
 MULUB A,A
@@ -1357,6 +1357,8 @@ MULUW HL,SP
 ```
 
 Setting the Z280 as the target CPU enables all the new Z280 instructions. There's a mechanism to disable the Z280 privileged instructions and the I/O instructions, this is useful when assembling code intended to run in the Z280 user mode. See ["Z280 support"](Z280Support.md).
+
+Setting the EZ80 as the target CPU enables all the new eZ80 instructions and the 24-bit ADL mode support. See ["eZ80 support"](eZ80Support.md).
 
 [The Z80 undocumented instructions](http://www.z80.info/z80undoc.htm) are always supported.
 

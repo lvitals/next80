@@ -18,6 +18,11 @@ typedef struct {
     int bits_left;
 } BitReader;
 
+/* MS-REL Extension Link Item Subtypes */
+#define EXT_REF_EXTERNAL   0x42
+#define EXT_ADDRESS        0x43
+#define EXT_SET_ADL        0x44
+
 static int read_bit(BitReader *r);
 static int peek_bit(BitReader *r) {
     long pos = ftell(r->f);
@@ -166,6 +171,7 @@ static Module *load_modules(const char *libname) {
 
     char current_name[256] = {0};
     int has_name = 0;
+    int flag_adl = 0;
     unsigned int cseg_sz = 0;
     unsigned int dseg_sz = 0;
     SymbolInfo *syms_head = NULL;
@@ -195,18 +201,23 @@ static Module *load_modules(const char *libname) {
                         if (syms_tail) syms_tail->next = s;
                         syms_tail = s;
                     } else if (ctrl == 4) { // Extension or External
-                        if ((unsigned char)sym[0] == 0x42) { // External reference
+                        if ((unsigned char)sym[0] == EXT_REF_EXTERNAL) { // External reference
                             SymbolInfo *s = calloc(1, sizeof(SymbolInfo));
                             snprintf(s->name, sizeof(s->name), "%s", sym + 1);
                             s->type = SYM_EXTERNAL;
                             if (!syms_head) syms_head = s;
                             if (syms_tail) syms_tail->next = s;
                             syms_tail = s;
+                        } else if ((unsigned char)sym[0] == EXT_SET_ADL) {
+                            flag_adl = (unsigned char)sym[1];
                         }
                     }
                 } else if (ctrl <= 7) {
                     int seg = (int)read_bits(&r, 2); (void)seg;
                     unsigned int val = read_16le(&r);
+                    if (flag_adl && (ctrl == 6 || ctrl == 7)) {
+                        val |= (read_bits(&r, 8) << 16);
+                    }
                     char sym[1024] = {0};
                     read_symbol(&r, sym, sizeof(sym));
                     if (ctrl == 7) { // Define public
@@ -230,6 +241,9 @@ static Module *load_modules(const char *libname) {
                 } else if (ctrl <= 14) {
                     int seg = (int)read_bits(&r, 2); (void)seg;
                     unsigned int val = read_16le(&r);
+                    if (flag_adl && (ctrl >= 8 && ctrl <= 14)) {
+                        val |= (read_bits(&r, 8) << 16);
+                    }
                     if (ctrl == 10) dseg_sz = val;
                     else if (ctrl == 13) cseg_sz = val;
                     else if (ctrl == 14) {
@@ -245,7 +259,6 @@ static Module *load_modules(const char *libname) {
                         if (has_name) {
                             snprintf(m->name, sizeof(m->name), "%s", current_name);
                         } else {
-                            // Fallback to filename? libname is passed.
                             snprintf(m->name, sizeof(m->name), "%s", libname);
                         }
                         
@@ -261,6 +274,7 @@ static Module *load_modules(const char *libname) {
                         last_pos = current_pos;
                         current_name[0] = '\0';
                         has_name = 0;
+                        flag_adl = 0;
                         cseg_sz = 0;
                         dseg_sz = 0;
                         syms_head = NULL;
@@ -275,7 +289,8 @@ static Module *load_modules(const char *libname) {
                     last_pos = ftell(f);
                 }
             } else {
-                read_bits(&r, 16);
+                int addr_size = flag_adl ? 24 : 16;
+                read_bits(&r, addr_size);
             }
         }
     }

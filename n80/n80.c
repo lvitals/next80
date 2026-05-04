@@ -50,10 +50,12 @@ typedef struct
 #define EXT_ARITHMETIC_OP  0x41
 #define EXT_REF_EXTERNAL   0x42
 #define EXT_ADDRESS        0x43
+#define EXT_SET_ADL        0x44
 
 /* Arithmetic Operator Codes for REL Type 4 */
 #define OP_STORE_AS_BYTE   1
 #define OP_STORE_AS_WORD   2
+#define OP_STORE_AS_24BIT  24
 #define OP_HIGH            3
 #define OP_LOW             4
 #define OP_NOT             5
@@ -105,8 +107,10 @@ int opt_file_case_lower = 0;
 int opt_output_file_explicit = 0;
 int opt_unknown_symbols_external = 0;
 int opt_allow_bare_expressions = 0;
-typedef enum { CPU_Z80, CPU_R800, CPU_Z280, CPU_8080 } CpuType;
+typedef enum { CPU_Z80, CPU_R800, CPU_Z280, CPU_8080, CPU_EZ80 } CpuType;
 CpuType current_cpu = CPU_Z80;
+int flag_adl = 0; // 0 = Z80 mode, 1 = ADL mode
+int inst_adl = -1; // -1 = no override, 0 = SIS (.S), 1 = LIS (.IS), 2 = SIL (.IL), 3 = LIL (.L)
 
 typedef enum {
 	ENC_ASCII,
@@ -125,24 +129,37 @@ int current_seg = SEG_ASEG;
 int seg_target[4] = {0, 0, 0, 0};
 int seg_max[4] = {0, 0, 0, 0};
 int target, origin, remote, dollar, dollar_seg, flag_dollar = 0, flag_z = 1;
-int min_target = 0xFFFF, max_target = 0;
+int min_target = 0xFFFFFF, max_target = 0;
 int flag_sdcc = 0;
 int eval_res_seg, eval_res_lbl;
 int entry_point = 0, entry_seg = SEG_ASEG;
 int phase_active = 0, phase_target = 0, phase_seg = SEG_ASEG;
 int pass = 1;
-#define SIZEOF_REL_BUFFER (2 << 20) // 2MB
+#define SIZEOF_REL_BUFFER (16 << 20) // 16MB
 unsigned char *rel_buffer, *rel_buffer_copy;
 int rel_bits = 0;
 long rel_pos = 0;
 
 #define INPUT_MAXIMUM 256
 #define PARAM_SIZE 2048
-#define SIZEOF_OUTPUT (1 << 16)
-unsigned char output[SIZEOF_OUTPUT + 512], source[4096], input0[4096], folder[1 << 9], incpath[1 << 9], newpath[1 << 9];
+#define SIZEOF_OUTPUT (16 << 20) // 16MB
+unsigned char *output, source[4096], input0[4096], folder[1 << 9], incpath[1 << 9], newpath[1 << 9];
 unsigned char *split_symbol, *split_opcode, *split_parmtr;
 static unsigned char split_opcode_buf[64];
 char saved_p;
+
+// Prototypes
+void write_rel_bits(unsigned int val, int n);
+void write_rel_byte(unsigned char b);
+void write_rel_control(int type, int a_val, int a_seg, char *symbol, int sym_len);
+void write_rel_adl_mode();
+unsigned int write_rel_addr(unsigned int addr, int type);
+unsigned int add_external_usage(int lbl, int offset);
+unsigned char record_and_write_rel_byte(unsigned char b);
+unsigned char record_and_write_output_byte_only(unsigned char b);
+
+#define NEXTBYTE(val) do { output[target] = record_and_write_rel_byte(val); target++; if (flag_adl) target &= 0xFFFFFF; else target &= 0xFFFF; } while(0)
+#define NEXTBYTE_OUTPUT(val) do { output[target] = record_and_write_output_byte_only(val); target++; if (flag_adl) target &= 0xFFFFFF; else target &= 0xFFFF; } while(0)
 
 #define LOCAL_MAXIMUM 4096
 int local_name[LOCAL_MAXIMUM], local_macro[LOCAL_MAXIMUM];
@@ -164,8 +181,6 @@ int open_macro(int i);
 int eval(char *s);
 void eval_start_rpn(void);
 extern char *eval_cursor;
-void write_rel_control(int type, int a_val, int a_seg, char *symbol, int sym_len);
-void add_external_usage(int lbl, int offset);
 static int sdcc_external_index_for_label(int lbl);
 
 int LABEL_MAXIMUM = 1 << 14;
@@ -273,10 +288,17 @@ static void sdcc_record_reloc(int offset, int flags, int target_index, int raw_v
 	SdccArea *area = &sdcc_areas[current_sdcc_area];
 	if (area->reloc_count >= (int)(sizeof(area->relocs) / sizeof(area->relocs[0])))
 		return;
+	
+	// If in ADL mode and not a byte reloc, set THREEB flag
+	int adl = (inst_adl == -1) ? flag_adl : (inst_adl >= 2);
+	if (adl && !(flags & 0x01)) {
+		flags |= 0x10; // XLF_REL_THREEB
+	}
+
 	area->relocs[area->reloc_count].offset = offset;
 	area->relocs[area->reloc_count].flags = flags;
 	area->relocs[area->reloc_count].target_index = target_index;
-	area->relocs[area->reloc_count].raw_value = raw_value & 0xFFFF;
+	area->relocs[area->reloc_count].raw_value = raw_value & 0xFFFFFF;
 	area->reloc_count++;
 }
 
@@ -330,6 +352,7 @@ char string_greeting[] = "usage: n80 source [$] [target] [--args]\n";
 void write_rel_bits(unsigned int val, int n)
 {
 	if (pass == 1) return;
+	if (flag_v > 1) fprintf(stderr, "REL: bits %d val %X (target=%06X)\n", n, val, target);
 	for (int i = 0; i < n; i++)
 	{
 		if (rel_pos >= SIZEOF_REL_BUFFER) {
@@ -401,8 +424,22 @@ static void sdcc_record_rpn_reloc(int is_byte)
 	}
 }
 
+static int rel_flag_adl = -1;
+
+void write_rel_adl_mode()
+{
+	if (flag_adl == rel_flag_adl) return;
+	char payload[2];
+	payload[0] = EXT_SET_ADL;
+	payload[1] = (char)flag_adl;
+	write_rel_control(4, 0, 0, payload, 2);
+	rel_flag_adl = flag_adl;
+}
+
 void write_rel_rpn(int is_byte)
 {
+	if (pass != 2) return;
+	write_rel_adl_mode();
 	sdcc_record_rpn_reloc(is_byte);
 	char payload[256];
 	for (int i = 0; i < rpn_count; i++) {
@@ -412,7 +449,12 @@ void write_rel_rpn(int is_byte)
 			payload[1] = (char)rpn_buffer[i].seg;
 			payload[2] = (char)(rpn_buffer[i].val & 0xFF);
 			payload[3] = (char)((rpn_buffer[i].val >> 8) & 0xFF);
-			write_rel_control(4, 0, 0, payload, 4);
+			int plen = 4;
+			if (flag_adl) {
+				payload[4] = (char)((rpn_buffer[i].val >> 16) & 0xFF);
+				plen = 5;
+			}
+			write_rel_control(4, 0, 0, payload, plen);
 		} else if (rpn_buffer[i].type == 1) { // EXT
 			payload[0] = EXT_REF_EXTERNAL;
 			int slen = strlen(rpn_buffer[i].sym);
@@ -428,11 +470,15 @@ void write_rel_rpn(int is_byte)
 	// Terminal Store OP
 	memset(payload, 0, sizeof(payload));
 	payload[0] = EXT_ARITHMETIC_OP;
-	payload[1] = is_byte ? OP_STORE_AS_BYTE : OP_STORE_AS_WORD;
+	int adl = (inst_adl == -1) ? flag_adl : (inst_adl >= 2);
+	if (adl && !is_byte)
+		payload[1] = OP_STORE_AS_24BIT;
+	else
+		payload[1] = is_byte ? OP_STORE_AS_BYTE : OP_STORE_AS_WORD;
 	write_rel_control(4, 0, 0, payload, 2);
 	
 	// Advance seg_target and max sizes
-	int size = (is_byte ? 1 : 2);
+	int size = (is_byte ? 1 : (adl ? 3 : 2));
 	if (current_seg == SEG_COMMON && current_common >= 0) {
 		if (target + size > common_sizes[current_common])
 			common_sizes[current_common] = target + size;
@@ -442,9 +488,13 @@ void write_rel_rpn(int is_byte)
 	seg_target[current_seg] += size;
 }
 
-void write_rel_addr(unsigned int addr, int type)
+unsigned int write_rel_addr(unsigned int addr, int type)
 {
-	if (flag_v > 0) fprintf(stderr, "write_rel_addr: addr=%04X, type=%d, res_lbl=%d\n", addr, type, eval_res_lbl);
+	if (pass != 2) return addr;
+	write_rel_adl_mode();
+	int adl = (inst_adl == -1) ? flag_adl : (inst_adl >= 2);
+	int size = adl ? 3 : 2;
+	if (flag_v > 0) fprintf(stderr, "write_rel_addr: addr=%04X, type=%d, res_lbl=%d, size=%d\n", addr, type, eval_res_lbl, size);
 	if (flag_sdcc && pass == 2 && type != SEG_ASEG && type != SEG_EXTRN) {
 		int target_area = -1;
 		if (eval_res_lbl >= 0 && eval_res_lbl < labels && label_sdcc_area[eval_res_lbl] >= 0)
@@ -464,18 +514,18 @@ void write_rel_addr(unsigned int addr, int type)
 	}
 	else if (type == SEG_EXTRN)
 	{
-		// Para externos, usamos add_external_usage para encadear a corrente.
-		// add_external_usage agora lida com o offset (emite Tipo 9 se necessário).
-		add_external_usage(eval_res_lbl, addr);
-		seg_target[current_seg] += 2;
+		// For externals, use add_external_usage to chain the relocations.
+		// add_external_usage now handles the offset (emits Type 9 if needed).
+		return add_external_usage(eval_res_lbl, addr);
 	}
 	else
 	{
 		// 101 = CSEG (type 1), 110 = DSEG (type 2), 111 = COMMON (type 3)
 		write_rel_bits(4 + type, 3);
-		write_rel_bits(addr, 16);
-		seg_target[current_seg] += 2;
+		write_rel_bits(addr, size * 8);
+		seg_target[current_seg] += size;
 	}
+	return addr;
 }
 
 void write_rel_symbol_bytes(const char *s, int len)
@@ -533,31 +583,35 @@ static int sdcc_external_index_for_label(int lbl)
 	return 0;
 }
 
-void add_external_usage(int lbl, int offset)
+unsigned int add_external_usage(int lbl, int offset)
 {
+	if (lbl < 0 || lbl >= labels) return 0;
+	write_rel_adl_mode();
+	int adl = (inst_adl == -1) ? flag_adl : (inst_adl >= 2);
 	int prev_addr = (offset == 0) ? label_last_addr[lbl] : 0;
-	// Escreve o link para o uso anterior (ou 0000 se houver offset) como dois bytes absolutos (prefixo 0)
-	unsigned char low = prev_addr & 0xFF;
-	unsigned char high = (prev_addr >> 8) & 0xFF;
-
-	write_rel_bits(0, 1); // byte absoluto
-	write_rel_bits(low, 8);
-	write_rel_bits(0, 1); // byte absoluto
-	write_rel_bits(high, 8);
+	
+	// Write the link to the previous usage as absolute bytes (prefix 0) in the REL stream
+	write_rel_bits(0, 1); write_rel_bits(prev_addr & 0xFF, 8);
+	write_rel_bits(0, 1); write_rel_bits((prev_addr >> 8) & 0xFF, 8);
+	if (adl) {
+		write_rel_bits(0, 1); write_rel_bits((prev_addr >> 16) & 0xFF, 8);
+	}
 
 	if (offset != 0)
 	{
-		// Se houver offset, emitimos Tipo 9 seguido de Tipo 6 para ESTE endereço específico.
-		// O offset é o 'addr' vindo do eval.
+		// If there is an offset, emit Type 9 followed by Type 6 for THIS specific address.
 		write_rel_control(9, offset, SEG_ASEG, "", 0);
-		write_rel_control(6, target, current_seg, &asciz[label[lbl]], 0);
+		int addr = phase_active ? phase_target : target;
+		write_rel_control(6, addr, current_seg, &asciz[label[lbl]], 0);
 	}
 	else
 	{
-		// O endereço deste uso vira a nova 'cabeça' da corrente para este label
-		label_last_addr[lbl] = target;
+		// The address of this usage becomes the new 'head' of the chain for this label
+		int addr = phase_active ? phase_target : target;
+		label_last_addr[lbl] = addr;
 		label_last_seg[lbl] = current_seg;
 	}
+	return (unsigned int)prev_addr;
 }
 
 void write_rel_control(int type, int a_val, int a_seg, char *symbol, int sym_len)
@@ -578,6 +632,9 @@ void write_rel_control(int type, int a_val, int a_seg, char *symbol, int sym_len
 		write_rel_bits(a_seg, 2);
 		write_rel_bits(a_val & 0xFF, 8);
 		write_rel_bits((a_val >> 8) & 0xFF, 8);
+		if (flag_adl) {
+			write_rel_bits((a_val >> 16) & 0xFF, 8);
+		}
 		write_rel_symbol(symbol);
 	}
 	else if (type <= 3)
@@ -589,6 +646,9 @@ void write_rel_control(int type, int a_val, int a_seg, char *symbol, int sym_len
 		write_rel_bits(a_seg, 2);
 		write_rel_bits(a_val & 0xFF, 8);
 		write_rel_bits((a_val >> 8) & 0xFF, 8);
+		if (flag_adl) {
+			write_rel_bits((a_val >> 16) & 0xFF, 8);
+		}
 	}
 }
 
@@ -656,6 +716,10 @@ static int sdcc_write_output(const char *source_name, const char *target_name)
 						represented = 3;
 						break;
 					}
+					if (area->relocs[ri].offset == pos && (area->relocs[ri].flags & 0x10)) {
+						represented = 3;
+						break;
+					}
 				}
 				if (represented_count + represented > 13)
 					break;
@@ -673,10 +737,17 @@ static int sdcc_write_output(const char *source_name, const char *target_name)
 					}
 				}
 				if (byte_reloc) {
-					fprintf(f, " %02X %02X %02X",
-						byte_reloc->raw_value & 0xFF,
-						(byte_reloc->raw_value >> 8) & 0xFF,
-						(byte_reloc->flags & 0x02) && byte_reloc->raw_value > 0x7FFF ? 0xFF : 0x00);
+					if (byte_reloc->flags & 0x10) {
+						fprintf(f, " %02X %02X %02X",
+							byte_reloc->raw_value & 0xFF,
+							(byte_reloc->raw_value >> 8) & 0xFF,
+							(byte_reloc->raw_value >> 16) & 0xFF);
+					} else {
+						fprintf(f, " %02X %02X %02X",
+							byte_reloc->raw_value & 0xFF,
+							(byte_reloc->raw_value >> 8) & 0xFF,
+							(byte_reloc->flags & 0x02) && byte_reloc->raw_value > 0x7FFF ? 0xFF : 0x00);
+					}
 				} else {
 					fprintf(f, " %02X", area->data[j]);
 				}
@@ -722,8 +793,11 @@ unsigned char write_rel_byte_helper(unsigned char b)
 	}
 	sdcc_record_byte(target, b);
 	write_rel_byte(b);
-	if (phase_active)
+	if (phase_active) {
 		phase_target++;
+		if (flag_adl) phase_target &= 0xFFFFFF;
+		else phase_target &= 0xFFFF;
+	}
 	return b;
 }
 
@@ -734,8 +808,11 @@ unsigned char write_output_byte_only(unsigned char b)
 		if (target >= max_target) max_target = target + 1;
 	}
 	sdcc_record_byte(target, b);
-	if (phase_active)
+	if (phase_active) {
 		phase_target++;
+		if (flag_adl) phase_target &= 0xFFFFFF;
+		else phase_target &= 0xFFFF;
+	}
 	return b;
 }
 
@@ -781,9 +858,6 @@ unsigned char record_and_write_output_byte_only(unsigned char b) {
     }
     return write_output_byte_only(b);
 }
-
-#define NEXTBYTE(val) do { output[target] = record_and_write_rel_byte(val); target++; } while(0)
-#define NEXTBYTE_OUTPUT(val) do { output[target] = record_and_write_output_byte_only(val); target++; } while(0)
 
 static void append_byte_to_buffer(unsigned char **buf, int *len, int *cap, unsigned char b)
 {
@@ -875,7 +949,7 @@ int put_asciz(char *s, int y[], int x, int xx)
 #define get_label(s) get_asciz(s, label, labels) // search label names
 int set_label(char *s, int n, int seg)
 {
-	n &= 0xFFFF;
+	n &= 0xFFFFFF;
 	int k;
 	if ((k = get_label(s)) >= 0)
 	{
@@ -887,7 +961,7 @@ int set_label(char *s, int n, int seg)
 }
 int add_label(char *s, int n, int seg)					 // create label
 {
-	n &= 0xFFFF;
+	n &= 0xFFFFFF;
 	int i, j;
 	char s_copy[256];
 	strncpy(s_copy, s, 255);
@@ -898,7 +972,7 @@ int add_label(char *s, int n, int seg)					 // create label
 
 	if ((i = ~get_label(s)) < 0)
 	{
-		// Símbolo já existe. Redefinir (modo permissivo para o Nextor)
+		// Symbol already exists. Redefine (permissive mode for Nextor)
 		int k = get_label(s);
 		value[k] = n;
 		label_seg[k] = seg;
@@ -1257,9 +1331,9 @@ int read_input(void)
 			}
 			else if (*s == '\'' && q == 0)
 			{
-				// No M80, aspas simples são usadas em AF' e constantes de char.
-				// Só tratar como string se houver outra aspa adiante e NÃO for AF'.
-				// Mas a forma mais segura é olhar se o caractere anterior é 'F' ou 'f'.
+				// In M80, single quotes are used in AF' and character constants.
+				// Only treat as a string if there's another quote ahead and it's NOT AF'.
+				// But the safest way is to check if the previous character is 'F' or 'f'.
 				if (s > (unsigned char *)input0 && (s[-1] | 32) == 'f')
 				{
 					// It's likely AF', do NOT start a string
@@ -1323,44 +1397,59 @@ int read_input(void)
 					return 0;
 			}
 		}
+		unsigned char expanded[8192];
+		unsigned char *p = expanded;
+		// Phase 1: Expand macro parameters (\1, \2, ..., \?) and respect ! escapes
 		while ((c = *s++))
 		{
 			if (c == '!')
 			{
-				if (*s) *t++ = *s++;
-			}
-			else if (c == '%')
-			{
-				eval_start_rpn();
-				int val = eval((char *)s);
-				s = (unsigned char *)eval_cursor;
-				t += sprintf((char *)t, "%d", val);
+				*p++ = '!';
+				if (*s) *p++ = *s++;
 			}
 			else if (c == '\\') // macro parameter?
 			{
 				if ((c = *s++) == '?')
-					t += sprintf((char *)t, "??%04X", local0[inputs - 1]);
+					p += sprintf((char *)p, "??%04X", local0[inputs - 1]);
 				else if (isnumber(c))
 				{
 					if ((c -= '0'))
 					{
 						if (c <= param[params - 1][0])
 						{
-							char *r = &param0[param[params - 1][c]];
-							while ((*t++ = *r++))
+							char *r = &param0[param[params - 1][(unsigned char)c]];
+							while ((*p++ = *r++))
 							{
 							}
-							--t;
+							--p;
 						}
 					}
 					else
-						*t++ = '0' + param[params - 1][0];
+						p += sprintf((char *)p, "%d", param[params - 1][0]);
 				}
 				else
-					*t++ = '\\', *t++ = c;
+				{
+					*p++ = '\\';
+					if (c) *p++ = c;
+				}
+			}
+			else
+				*p++ = c;
+			if (p >= &expanded[sizeof(expanded) - 128]) break; // safety break
+		}
+		*p = 0;
+
+		// Phase 2: Handle ! escapes
+		s = expanded; t = input0;
+		while ((c = *s++))
+		{
+			if (c == '!')
+			{
+				if (*s) *t++ = *s++;
 			}
 			else
 				*t++ = c;
+			if (t >= &input0[sizeof(input0) - 128]) break; // safety break
 		}
 		*t = 0;
 	}
@@ -1636,6 +1725,7 @@ enum opertr_
 	EVAL_OP1_CPL,  // "~"
 	EVAL_OP1_LOW,  // "LOW"
 	EVAL_OP1_HIGH, // "HIGH"
+	EVAL_OP1_UPR,  // "UPPER"
 	EVAL_UNARIES,  // CATEGORY
 	EVAL_OP2_MUL,  // "*"
 	EVAL_OP2_DIV,  // "/"
@@ -1664,7 +1754,7 @@ enum opertr_
 int eval_int[EVAL_MAXIMUM], eval_int_seg[EVAL_MAXIMUM], eval_int_lbl[EVAL_MAXIMUM], eval_ints, eval_ops;
 char eval_op[EVAL_MAXIMUM], eval_pr[EVAL_MAXIMUM];
 // Indexed by EVAL_* enum values (0-29). EVAL_P_INIT(28) and EVAL_P_EXIT(29) use priority 0.
-char eval_priorities[] = {0, 5, 5, 5, 5, 5, 5, 5, 4, 4, 4, 4, 4, 4, 3, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 0, 0};
+char eval_priorities[] = {0, 6, 6, 6, 6, 6, 6, 6, 5, 5, 5, 5, 5, 5, 4, 2, 1, 3, 4, 4, 1, 2, 3, 3, 3, 3, 3, 3, 0, 0};
 // INLINE int eval_priority(int i) { return (i<EVAL_UNARIES)+(i<EVAL_BINARY_H)+(i<EVAL_BINARY_M)+(i<EVAL_BINARY_L)+(i<EVAL_BINARIES); }
 void eval_start_rpn(void)
 {
@@ -1690,7 +1780,10 @@ void eval_push_int(int i, int seg)
 				rpn_buffer[rpn_count].type = 1; // EXT
 				rpn_buffer[rpn_count].val = 0;
 				rpn_buffer[rpn_count].seg = SEG_EXTRN;
-				snprintf(rpn_buffer[rpn_count].sym, 64, "%s", &asciz[label[eval_res_lbl]]);
+				if (eval_res_lbl >= 0 && eval_res_lbl < labels)
+					snprintf(rpn_buffer[rpn_count].sym, 64, "%s", &asciz[label[eval_res_lbl]]);
+				else
+					rpn_buffer[rpn_count].sym[0] = 0;
 				eval_has_extrn = 1;
 			} else {
 				rpn_buffer[rpn_count].type = 0; // VAL
@@ -1758,6 +1851,10 @@ int eval_op1(char o, int x, int x_seg, int *res_seg)
 		if (x_seg != SEG_ASEG)
 			*res_seg = SEG_COMPLEX;
 		return (x >> 8) & 0xFF;
+	case EVAL_OP1_UPR:
+		if (x_seg != SEG_ASEG)
+			*res_seg = SEG_COMPLEX;
+		return (x >> 16) & 0xFF;
 	}
 	return eval_status = -1;
 }
@@ -1812,25 +1909,56 @@ int eval_op2(char o, int x, int x_seg, int y, int y_seg, int *res_seg)
 		case EVAL_OP2_ORR:
 			res_val = x | y; break;
 		case EVAL_OP2_SHL:
-			res_val = y >= 0 ? x << (y & 15) : (eval_status = eval_status ? eval_status : -1); break;
+		{
+			int adl = (inst_adl == -1) ? flag_adl : (inst_adl >= 2);
+			int mask = adl ? 0xFFFFFF : 0xFFFF;
+			res_val = y >= 0 ? (x & mask) << (y & 31) : (eval_status = eval_status ? eval_status : -1); break;
+		}
 		case EVAL_OP2_L_E:
-			res_val = x <= y; break;
+		{
+			int adl = (inst_adl == -1) ? flag_adl : (inst_adl >= 2);
+			int mask = adl ? 0xFFFFFF : 0xFFFF;
+			res_val = (unsigned int)(x & mask) <= (unsigned int)(y & mask); break;
+		}
 		case EVAL_OP2_LSS:
-			res_val = (unsigned short)x < (unsigned short)y; break;
+		{
+			int adl = (inst_adl == -1) ? flag_adl : (inst_adl >= 2);
+			int mask = adl ? 0xFFFFFF : 0xFFFF;
+			res_val = (unsigned int)(x & mask) < (unsigned int)(y & mask); break;
+		}
 		case EVAL_OP2_SHR:
-			res_val = y >= 0 ? (unsigned short)x >> (y & 15) : (eval_status = eval_status ? eval_status : -1); break;
+		{
+			int adl = (inst_adl == -1) ? flag_adl : (inst_adl >= 2);
+			int mask = adl ? 0xFFFFFF : 0xFFFF;
+			res_val = y >= 0 ? (unsigned int)(x & mask) >> (y & 31) : (eval_status = eval_status ? eval_status : -1); break;
+		}
 		case EVAL_OP2_G_E:
-			res_val = (unsigned short)x >= (unsigned short)y; break;
+		{
+			int adl = (inst_adl == -1) ? flag_adl : (inst_adl >= 2);
+			int mask = adl ? 0xFFFFFF : 0xFFFF;
+			res_val = (unsigned int)(x & mask) >= (unsigned int)(y & mask); break;
+		}
 		case EVAL_OP2_GRT:
-			res_val = (unsigned short)x > (unsigned short)y; break;
+		{
+			int adl = (inst_adl == -1) ? flag_adl : (inst_adl >= 2);
+			int mask = adl ? 0xFFFFFF : 0xFFFF;
+			res_val = (unsigned int)(x & mask) > (unsigned int)(y & mask); break;
+		}
 		case EVAL_OP2_EQU:
-			res_val = (unsigned short)x == (unsigned short)y; break;
+		{
+			int adl = (inst_adl == -1) ? flag_adl : (inst_adl >= 2);
+			int mask = adl ? 0xFFFFFF : 0xFFFF;
+			res_val = (unsigned int)(x & mask) == (unsigned int)(y & mask); break;
+		}
 		case EVAL_OP2_NEQ:
-			res_val = (unsigned short)x != (unsigned short)y; break;
+		{
+			int adl = (inst_adl == -1) ? flag_adl : (inst_adl >= 2);
+			int mask = adl ? 0xFFFFFF : 0xFFFF;
+			res_val = (unsigned int)(x & mask) != (unsigned int)(y & mask); break;
+		}
 		}
 	}
-	res_val &= 0xFFFF;
-	if (flag_v > 0) fprintf(stderr, "eval_op2: op=%d, x=%04X(%d), y=%04X(%d) -> res=%04X(%d)\n", o, x, x_seg, y, y_seg, res_val, *res_seg);
+	res_val &= 0xFFFFFF;
 	return res_val;
 }
 void eval_operate(void)
@@ -1857,6 +1985,7 @@ void eval_operate(void)
 				case EVAL_OP1_CPL: rpn_buffer[rpn_count].val = OP_NOT; break;
 				case EVAL_OP1_LOW: rpn_buffer[rpn_count].val = 4; break;
 				case EVAL_OP1_HIGH: rpn_buffer[rpn_count].val = 3; break;
+				case EVAL_OP1_UPR: rpn_buffer[rpn_count].val = 5; break;
 				default: rpn_buffer[rpn_count].val = 0; break;
 			}
 			if (rpn_buffer[rpn_count].val != 0) rpn_count++;
@@ -1928,6 +2057,11 @@ int eval_get_prefix(void)
 	{
 		eval_cursor += 4;
 		return EVAL_OP1_HIGH;
+	}
+	if (strncasecmp((char *)eval_cursor, "UPPER", 5) == 0 && !iseither(eval_cursor[5]))
+	{
+		eval_cursor += 5;
+		return EVAL_OP1_UPR;
 	}
 	return EVAL_NULL;
 }
@@ -2159,6 +2293,7 @@ int eval(char *s)
 	}
 	int i = 0; // perhaps this should be "long long"...
 	char c, q = eval_status = eval_ints = eval_ops = 0;
+	eval_res_lbl = -1;
 	eval_cursor = s;
 	while (eval_status >= 0)
 	{
@@ -2363,6 +2498,10 @@ int eval(char *s)
 				eval_operate();
 		}
 		i = eval_pop_int(&eval_res_seg);
+		// Sign extend 32-bit if it looks like a 24-bit negative number
+		if (i & 0x800000) i |= 0xFF000000;
+		if (flag_adl) i &= 0xFFFFFF;
+		else i &= 0xFFFF;
 		if (eval_ints)
 		{
 			if (flag_v > 0 || strcmp(s, "()") == 0) fprintf(stderr, "DEBUG eval FAILED: s='%s', eval_ints=%d, eval_status=%d\n", s, eval_ints, eval_status);
@@ -2373,6 +2512,7 @@ int eval(char *s)
 }
 void write_rel_switch_seg()
 {
+	write_rel_adl_mode();
 	write_rel_control(11, target, current_seg, "", 0);
 }
 
@@ -2490,6 +2630,8 @@ enum opcode_
 	PSEUDO_CPU,
 	PSEUDO_8080,
 	PSEUDO_Z80,
+	PSEUDO_EZ80,
+	PSEUDO_ADL,
 	PSEUDO_PRINT1,
 	PSEUDO_PRINT2,
 	PSEUDO_AREA,
@@ -2508,6 +2650,11 @@ enum opcode_
 	OPCODE_JP,
 	OPCODE_JR,
 	OPCODE_LD,
+	OPCODE_LEA,
+	OPCODE_PEA,
+	OPCODE_MLT,
+	OPCODE_RSMIX,
+	OPCODE_STMIX,
 	OPCODE_LDA,
 	OPCODE_LDCTL,
 	OPCODE_LDW,
@@ -2540,6 +2687,11 @@ enum opcode_
 	OPCODE_INW,
 	OPCODE_OUTW,
 	OPCODE_SC,
+	OPCODE_SLP,
+	OPCODE_TSTIO,
+	OPCODE_IN0,
+	OPCODE_OUT0,
+	OPCODE_TST,
 	OPCODE_LDUD,
 	OPCODE_LDUP,
 	OPCODE_JAF,
@@ -2560,17 +2712,20 @@ enum opcode_
 t_opcode opcode[] = {
 	// MUST BE IN ALPHABETICAL ORDER!
 	{".8080", 0, PSEUDO_8080},
+	{".adl", 0, PSEUDO_ADL},
 	{".align", 0, PSEUDO_ALIGN},
 	{".area", 0, PSEUDO_AREA},
 	{".cpu", 0, PSEUDO_CPU},
 	{".dephase", 0, PSEUDO_DEPHASE},
 	{".error", 0, PSEUDO_ERROR},
+	{".ez80", 0, PSEUDO_EZ80},
 	{".extroot", 0, PSEUDO_EXTROOT},
 	{".fatal", 0, PSEUDO_FATAL},
 	{".lall", 0, PSEUDO_IGNORE},
 	{".list", 0, PSEUDO_IGNORE},
 	{".name", 0, PSEUDO_NAME},
 	{".nolist", 0, PSEUDO_IGNORE},
+	{".org", 0, PSEUDO_ORG},
 	{".phase", 0, PSEUDO_PHASE},
 	{".print", 0, PSEUDO_PRINT},
 	{".print1", 0, PSEUDO_PRINT1},
@@ -2594,6 +2749,7 @@ t_opcode opcode[] = {
 	{"add", 0, OPCODE_ADD},
 	{"addw", 0, OPCODE_ADDW},
 	{"adi", 0xC6, OPCODE_8080_ALU_I},
+	{"adl", 0, PSEUDO_ADL},
 	{"align", 0, PSEUDO_ALIGN},
 	{"and", +4, OPCODE_SUB},
 	{"area", 0, PSEUDO_AREA},
@@ -2646,6 +2802,9 @@ t_opcode opcode[] = {
 	{"endm", 0, PSEUDO_ENDM},
 	{"endmod", 0, PSEUDO_ENDMOD},
 	{"entry", 0, PSEUDO_PUBLIC},
+	{"epuf", 0xED97, OPCODE_COPY2},
+	{"epui", 0xED9F, OPCODE_COPY2},
+	{"epum", 0, OPCODE_EPUM},
 	{"equ", 0, PSEUDO_EQU},
 	{"ex", 0, OPCODE_EX},
 	{"exa", 0x08, OPCODE_COPY1}, // RASM synonym
@@ -2653,11 +2812,11 @@ t_opcode opcode[] = {
 	{"ext", 0, PSEUDO_EXTRN},
 	{"external", 0, PSEUDO_EXTRN},
 	{"extrn", 0, PSEUDO_EXTRN},
-	{"exx", 0xD9, OPCODE_COPY1},
-	{"epuf", 0xED97, OPCODE_COPY2},
-	{"epui", 0xED9F, OPCODE_COPY2},
-	{"epum", 0, OPCODE_EPUM},
 	{"exts", 0, OPCODE_EXTS},
+	{"exx", 0xD9, OPCODE_COPY1},
+	{"ez80", 0, PSEUDO_EZ80},
+	{"f", 0xED40, OPCODE_COPY2},
+
 	{"halt", 0x76, OPCODE_COPY1},
 	{"hlt", 0x76, OPCODE_COPY1},
 	{"if", 0, PSEUDO_IF},
@@ -2679,11 +2838,20 @@ t_opcode opcode[] = {
 	{"ift", 0, PSEUDO_IF},
 	{"im", 0, OPCODE_IM},
 	{"in", 0, OPCODE_IN},
+	{"in0", 0, OPCODE_IN0},
 	{"ind", 0xEDAA, OPCODE_COPY2},
+	{"ind2", 0xED8C, OPCODE_COPY2},
+	{"ind2r", 0xED9C, OPCODE_COPY2},
+	{"indm", 0xED8A, OPCODE_COPY2},
+	{"indmr", 0xED9A, OPCODE_COPY2},
 	{"indr", 0xEDBA, OPCODE_COPY2},
 	{"indrw", 0xED9A, OPCODE_COPY2},
 	{"indw", 0xED8A, OPCODE_COPY2},
 	{"ini", 0xEDA2, OPCODE_COPY2},
+	{"ini2", 0xED84, OPCODE_COPY2},
+	{"ini2r", 0xED94, OPCODE_COPY2},
+	{"inim", 0xED82, OPCODE_COPY2},
+	{"inimr", 0xED92, OPCODE_COPY2},
 	{"inir", 0xEDB2, OPCODE_COPY2},
 	{"inirw", 0xED92, OPCODE_COPY2},
 	{"iniw", 0xED82, OPCODE_COPY2},
@@ -2709,10 +2877,12 @@ t_opcode opcode[] = {
 	{"ldi", 0xEDA0, OPCODE_COPY2},
 	{"ldir", 0xEDB0, OPCODE_COPY2},
 	{"ldw", 0, OPCODE_LDW},
+	{"lea", 0, OPCODE_LEA},
 	{"list", 0, PSEUDO_IGNORE},
 	{"local", 0, PSEUDO_LOCAL},
 	{"macro", 0, PSEUDO_MACRO},
 	{"mepu", 0, OPCODE_MEPU},
+	{"mlt", 0, OPCODE_MLT},
 	{"module", 0, PSEUDO_MODULE},
 	{"mult", 0, OPCODE_MULT},
 	{"multu", 8, OPCODE_MULT},
@@ -2728,16 +2898,26 @@ t_opcode opcode[] = {
 	{"org", 0, PSEUDO_ORG},
 	{"otdr", 0xEDBB, OPCODE_COPY2},
 	{"otdrw", 0xED9B, OPCODE_COPY2},
+	{"otd2r", 0xEDBC, OPCODE_COPY2},
+	{"otdm", 0xED8B, OPCODE_COPY2},
+	{"otdmr", 0xED9B, OPCODE_COPY2},
 	{"otir", 0xEDB3, OPCODE_COPY2},
 	{"otirw", 0xED93, OPCODE_COPY2},
+	{"oti2r", 0xEDB4, OPCODE_COPY2},
+	{"otim", 0xED83, OPCODE_COPY2},
+	{"otimr", 0xED93, OPCODE_COPY2},
 	{"out", 0, OPCODE_OUT},
+	{"out0", 0, OPCODE_OUT0},
 	{"outd", 0xEDAB, OPCODE_COPY2},
+	{"outd2", 0xEDAC, OPCODE_COPY2},
 	{"outdw", 0xED8B, OPCODE_COPY2},
 	{"outi", 0xEDA3, OPCODE_COPY2},
+	{"outi2", 0xEDA4, OPCODE_COPY2},
 	{"outiw", 0xED83, OPCODE_COPY2},
 	{"outw", 0, OPCODE_OUTW},
 	{"page", 0, PSEUDO_IGNORE},
 	{"pcache", 0xED65, OPCODE_COPY2},
+	{"pea", 0, OPCODE_PEA},
 	{"pop", +0xC1, OPCODE_POP},
 	{"print", 0, PSEUDO_PRINT},
 	{"public", 0, PSEUDO_PUBLIC},
@@ -2760,6 +2940,7 @@ t_opcode opcode[] = {
 	{"rrca", 0x0F, OPCODE_COPY1},
 	{"rrd", 0xED67, OPCODE_COPY2},
 	{"rst", 0, OPCODE_RST},
+	{"rsmix", 0, OPCODE_RSMIX},
 	{"sbb", +1, OPCODE_ADC},
 	{"sc", 0, OPCODE_SC},
 	{"sbc", +1, OPCODE_ADC},
@@ -2770,13 +2951,17 @@ t_opcode opcode[] = {
 	{"sl1", +0x30, OPCODE_RLC}, // RASM synonym
 	{"sla", +0x20, OPCODE_RLC},
 	{"sll", +0x30, OPCODE_RLC},
+	{"slp", 0, OPCODE_SLP},
 	{"sra", +0x28, OPCODE_RLC},
 	{"srl", +0x38, OPCODE_RLC},
+	{"stmix", 0, OPCODE_STMIX},
 	{"sub", +2, OPCODE_SUB},
 	{"subw", 0, OPCODE_SUBW},
 	{"subttl", 0, PSEUDO_IGNORE},
 	{"title", 0, PSEUDO_NAME},
+	{"tst", 0, OPCODE_TST},
 	{"tsti", 0, OPCODE_TSTI},
+	{"tstio", 0, OPCODE_TSTIO},
 	{"tset", 0, OPCODE_TSET},
 	{"xrelab", 0, PSEUDO_XRELAB},
 	{"xor", +5, OPCODE_SUB},
@@ -3443,7 +3628,9 @@ int get_parmtr_sub(int i)
 #define CHECK_OVERFLOW(x, a, z, e)                         \
 	do                                                     \
 	{                                                      \
-		if (pass == 2 && !eval_status && (x < a || x > z)) \
+		int val_to_check = x;                              \
+		if (val_to_check & 0x80) val_to_check |= ~0xFF;    \
+		if (pass == 2 && !eval_status && (val_to_check < a || val_to_check > z)) \
 			FATAL_ERROR(e);                                \
 	} while (0)
 #define CHECK_BAD_CHAR(x) CHECK_OVERFLOW(x, -128, +127, error_char_overflow)
@@ -3460,9 +3647,23 @@ void check_bad_byte(int x)
 #define CHECK_BAD_BYTE(x) check_bad_byte(x)
 void check_bad_word(int x)
 {
-	if (pass == 2 && !eval_status && (x < -32768 || x > 65535)) {
-		fprintf(stderr, "DEBUG check_bad_word FAILED: x=%d(0x%X), status=%d\n", x, x, eval_status);
-		printerror(error_word_overflow);
+	int adl = (inst_adl == -1) ? flag_adl : (inst_adl >= 2);
+	if (pass == 2 && !eval_status) {
+		if (adl) {
+			if (x < -0x800000 || x > 0xFFFFFF) {
+				fprintf(stderr, "DEBUG check_bad_word FAILED: x=%d(0x%X), status=%d, adl=%d\n", x, x, eval_status, adl);
+				printerror(error_word_overflow);
+			}
+		} else {
+			// In Z80 mode, we allow 16-bit values. 
+			// We accept values that fit in 16 bits signed (-32768 to 32767)
+			// or unsigned (0 to 65535).
+			// After masking in eval(), -3 becomes 65533 (0xFFFD).
+			if (x < -32768 || x > 65535) {
+				fprintf(stderr, "DEBUG check_bad_word FAILED: x=%d(0x%X), status=%d, adl=%d\n", x, x, eval_status, adl);
+				printerror(error_word_overflow);
+			}
+		}
 	}
 }
 #define CHECK_BAD_WORD(x) check_bad_word(x)
@@ -3479,25 +3680,38 @@ int assemble_filler(int i, int j) // 0 OK, !0 ERROR
 	return 0;
 }
 
+#define EZ80_PREFIX() do { \
+	if (current_cpu == CPU_EZ80 && inst_adl != -1) { \
+		int current_mode = flag_adl ? 3 : 0; \
+		if (inst_adl != current_mode) \
+			NEXTBYTE(0x40 + inst_adl * 9); \
+	} \
+} while (0)
+
 #define NEXTWORD_REL(val, seg)                  \
 	do                                          \
 	{                                           \
+		int adl = (inst_adl == -1) ? flag_adl : (inst_adl >= 2); \
+		unsigned int actual_val = (val);        \
 		if ((seg) == SEG_COMPLEX)               \
 		{                                       \
 			write_rel_rpn(0);                   \
-			NEXTBYTE_OUTPUT((val)&0xFF);        \
-			NEXTBYTE_OUTPUT(((val) >> 8) & 0xFF); \
+			NEXTBYTE_OUTPUT((actual_val)&0xFF); \
+			NEXTBYTE_OUTPUT(((actual_val) >> 8) & 0xFF); \
+			if (adl) NEXTBYTE_OUTPUT(((actual_val) >> 16) & 0xFF); \
 		}                                       \
 		else if ((seg) != SEG_ASEG)             \
 		{                                       \
-			write_rel_addr((unsigned int)(val), seg); \
-			NEXTBYTE_OUTPUT((val)&0xFF);        \
-			NEXTBYTE_OUTPUT(((val) >> 8) & 0xFF); \
+			actual_val = write_rel_addr((unsigned int)(val), seg); \
+			NEXTBYTE_OUTPUT((actual_val)&0xFF); \
+			NEXTBYTE_OUTPUT(((actual_val) >> 8) & 0xFF); \
+			if (adl) NEXTBYTE_OUTPUT(((actual_val) >> 16) & 0xFF); \
 		}                                       \
 		else                                    \
 		{                                       \
-			NEXTBYTE((val)&0xFF);               \
-			NEXTBYTE(((val) >> 8) & 0xFF);      \
+			NEXTBYTE((actual_val)&0xFF);        \
+			NEXTBYTE(((actual_val) >> 8) & 0xFF); \
+			if (adl) NEXTBYTE(((actual_val) >> 16) & 0xFF); \
 		}                                       \
 	} while (0)
 
@@ -3701,6 +3915,9 @@ int assemble_opcode(int o, int oo) // 0 OK, !0 ERROR
 	char *s = (char *)split_parmtr, *t, c, q;
 	FETCH_PARMTR(x, xx, xx_seg);
 	z = eval_status; // 1st doubt
+	
+	EZ80_PREFIX();
+
 	switch (o)
 	{
 	case OPCODE_ADC:
@@ -3838,17 +4055,41 @@ int assemble_opcode(int o, int oo) // 0 OK, !0 ERROR
 		if (x != PARMTR_INTEGER)
 			FATAL_PARMTR;
 		NEXTBYTE(0x10);
-		xx = xx - (phase_active ? phase_target : target) - 1;
+		{
+			int pc = (phase_active ? phase_target : target);
+			int adl = (inst_adl == -1) ? flag_adl : (inst_adl & 1);
+			unsigned int mask = adl ? 0xFFFFFF : 0xFFFF;
+			int offset = (int)((xx & mask) - ((pc + 1) & mask));
+			// Normalize to shortest distance in current address space (handle wrap-around)
+			if (offset > (int)(mask >> 1)) offset -= (int)(mask + 1);
+			else if (offset < -(int)(mask >> 1)) offset += (int)(mask + 1);
+			xx = offset;
+
+			if (pass == 2 && xx_seg != current_seg && xx_seg != SEG_ASEG)
+				FATAL_ERROR(error_char_overflow);
+		}
 		NEXTBYTE(xx);
 		CHECK_BAD_CHAR(xx);
 		break;
 	case OPCODE_JAF:
 		// Z280: JAF/JAR label  →  DD 28/20 n  (3-byte relative jump)
-		// n = dest - (PC + 3); after emitting DD+oo, target = PC+2, so n = dest - target - 1
+		// n = dest - (PC + 3); after emitting DD+oo, target = PC+2, so n = dest - (target + 1)
 		if (x != PARMTR_INTEGER) FATAL_PARMTR;
 		NEXTBYTE(0xDD);
-		NEXTBYTE(oo); // 0x28 for JAF, 0x20 for JAR
-		xx = xx - (phase_active ? phase_target : target) - 1;
+		NEXTBYTE(oo); // oo is 0x28 for JAF, 0x20 for JAR
+		{
+			int pc = (phase_active ? phase_target : target);
+			int adl = (inst_adl == -1) ? flag_adl : (inst_adl & 1);
+			unsigned int mask = adl ? 0xFFFFFF : 0xFFFF;
+			int offset = (int)((xx & mask) - ((pc + 1) & mask));
+			// Normalize to shortest distance
+			if (offset > (int)(mask >> 1)) offset -= (int)(mask + 1);
+			else if (offset < -(int)(mask >> 1)) offset += (int)(mask + 1);
+			xx = offset;
+
+			if (pass == 2 && xx_seg != current_seg && xx_seg != SEG_ASEG)
+				FATAL_ERROR(error_char_overflow);
+		}
 		NEXTBYTE(xx);
 		CHECK_BAD_CHAR(xx);
 		break;
@@ -3899,6 +4140,41 @@ int assemble_opcode(int o, int oo) // 0 OK, !0 ERROR
 		}
 		else
 			FATAL_PARMTR;
+		break;
+	case OPCODE_IN0:
+		FETCH_PARMTR(y, yy, yy_seg);
+		if (y == PARMTR_PTR) {
+			GET_PARMTR_F(x, get_parmtr_in);
+			NEXTBYTE(0xED);
+			NEXTBYTE(x * 8 + 0x00);
+			NEXTBYTE(yy);
+			CHECK_BAD_BYTE(yy);
+		} else FATAL_PARMTR;
+		break;
+	case OPCODE_OUT0:
+		FETCH_PARMTR(y, yy, yy_seg);
+		if (x == PARMTR_PTR) {
+			GET_PARMTR_F(y, get_parmtr_in);
+			NEXTBYTE(0xED);
+			NEXTBYTE(y * 8 + 0x01);
+			NEXTBYTE(xx);
+			CHECK_BAD_BYTE(xx);
+		} else FATAL_PARMTR;
+		break;
+	case OPCODE_TST:
+		if (x == PARMTR_P_HL) {
+			NEXTBYTE(0xED);
+			NEXTBYTE(0x34);
+		} else if (x == PARMTR_VAL) {
+			NEXTBYTE(0xED);
+			NEXTBYTE(0x64);
+			NEXTBYTE(xx);
+			CHECK_BAD_BYTE(xx);
+		} else {
+			GET_PARMTR_F(x, get_parmtr_in);
+			NEXTBYTE(0xED);
+			NEXTBYTE(x * 8 + 0x04);
+		}
 		break;
 	case OPCODE_INC:
 		GET_PARMTR_F(x, get_parmtr_inc);
@@ -3978,14 +4254,19 @@ int assemble_opcode(int o, int oo) // 0 OK, !0 ERROR
 		NEXTBYTE(x);
 		{
 			int pc = (phase_active ? phase_target : target);
-			int offset = (int)((short)((xx & 0xFFFF) - ((pc + 1) & 0xFFFF)));
-			if (strstr((char *)source, "jr") && strstr((char *)source, "wr_secondary")) {
-				fprintf(stderr, "DEBUG JR: dest=0x%04X, pc=0x%04X, offset=%d, pass=%d\n", xx & 0xFFFF, pc & 0xFFFF, offset, pass);
-			}
+			int adl = (inst_adl == -1) ? flag_adl : (inst_adl & 1);
+			unsigned int mask = adl ? 0xFFFFFF : 0xFFFF;
+			int offset = (int)((xx & mask) - ((pc + 1) & mask));
+			// Normalize to shortest distance in current address space (handle wrap-around)
+			if (offset > (int)(mask >> 1)) offset -= (int)(mask + 1);
+			else if (offset < -(int)(mask >> 1)) offset += (int)(mask + 1);
 			xx = offset;
+
+			if (pass == 2 && xx_seg != current_seg && xx_seg != SEG_ASEG)
+				FATAL_ERROR(error_char_overflow);
 		}
 		NEXTBYTE(xx);
-		// if (xx_seg == SEG_ASEG) CHECK_BAD_CHAR(xx);
+		CHECK_BAD_CHAR(xx);
 		break;
 	case OPCODE_LD:
 		GET_PARMTR_F(x, get_parmtr_ld);
@@ -4231,6 +4512,67 @@ int assemble_opcode(int o, int oo) // 0 OK, !0 ERROR
 			else
 				FATAL_PARMTR;
 		}
+		break;
+	case OPCODE_LEA:
+	{
+		int reg = -1;
+		if (x == PARMTR_BC) reg = 0;
+		else if (x == PARMTR_DE) reg = 1;
+		else if (x == PARMTR_HL) reg = 2;
+		else if (x == PARMTR_IX || x == PARMTR_IY) reg = 3;
+		else FATAL_PARMTR;
+
+		FETCH_PARMTR(y, yy, yy_seg);
+		if (y == PARMTR_P_IX) {
+			NEXTBYTE(0xED);
+			NEXTBYTE(0x02 + (reg << 4));
+			NEXTBYTE(yy);
+			if (yy_seg == SEG_ASEG) CHECK_BAD_CHAR(yy);
+		} else if (y == PARMTR_P_IY) {
+			NEXTBYTE(0xED);
+			NEXTBYTE(0x03 + (reg << 4));
+			NEXTBYTE(yy);
+			if (yy_seg == SEG_ASEG) CHECK_BAD_CHAR(yy);
+		} else FATAL_PARMTR;
+		break;
+	}
+	case OPCODE_PEA:
+		if (x == PARMTR_P_IX) {
+			NEXTBYTE(0xED);
+			NEXTBYTE(0x65);
+			NEXTBYTE(xx);
+			if (xx_seg == SEG_ASEG) CHECK_BAD_CHAR(xx);
+		} else if (x == PARMTR_P_IY) {
+			NEXTBYTE(0xED);
+			NEXTBYTE(0x66);
+			NEXTBYTE(xx);
+			if (xx_seg == SEG_ASEG) CHECK_BAD_CHAR(xx);
+		} else FATAL_PARMTR;
+		break;
+	case OPCODE_MLT:
+		if (x == PARMTR_BC) { NEXTBYTE(0xED); NEXTBYTE(0x4C); }
+		else if (x == PARMTR_DE) { NEXTBYTE(0xED); NEXTBYTE(0x5C); }
+		else if (x == PARMTR_HL) { NEXTBYTE(0xED); NEXTBYTE(0x6C); }
+		else if (x == PARMTR_SP) { NEXTBYTE(0xED); NEXTBYTE(0x7C); }
+		else FATAL_PARMTR;
+		break;
+	case OPCODE_RSMIX:
+		NEXTBYTE(0xED);
+		NEXTBYTE(0x7E);
+		break;
+	case OPCODE_STMIX:
+		NEXTBYTE(0xED);
+		NEXTBYTE(0x7D);
+		break;
+	case OPCODE_SLP:
+		NEXTBYTE(0xED);
+		NEXTBYTE(0x76);
+		break;
+	case OPCODE_TSTIO:
+		NEXTBYTE(0xED);
+		NEXTBYTE(0x74);
+		NEXTBYTE(xx);
+		CHECK_BAD_BYTE(xx);
 		break;
 	case OPCODE_MULUB: // R800 only!
 		if (flag_dollar)
@@ -5138,6 +5480,21 @@ int assemble_input(void) // 0 OK, !0 ERROR
 	split_input();
 	int i, j, k, o, oo;
 	i = get_opcode((char *)split_opcode);
+	inst_adl = -1;
+	if (i < 0 && current_cpu == CPU_EZ80) {
+		char s_tmp[128];
+		strncpy(s_tmp, (char *)split_opcode, 127);
+		s_tmp[127] = 0;
+		int len = strlen(s_tmp);
+		if (len > 2 && s_tmp[len - 2] == '.') {
+			if (!strcasecmp(s_tmp + len - 1, "s")) { inst_adl = 0; s_tmp[len - 2] = 0; i = get_opcode(s_tmp); }
+			else if (!strcasecmp(s_tmp + len - 1, "l")) { inst_adl = 3; s_tmp[len - 2] = 0; i = get_opcode(s_tmp); }
+		}
+		if (i < 0 && len > 3 && s_tmp[len - 3] == '.') {
+			if (!strcasecmp(s_tmp + len - 2, "is")) { inst_adl = 1; s_tmp[len - 3] = 0; i = get_opcode(s_tmp); }
+			else if (!strcasecmp(s_tmp + len - 2, "il")) { inst_adl = 2; s_tmp[len - 3] = 0; i = get_opcode(s_tmp); }
+		}
+	}
 	oo = i >= 0 ? opcode[i].code : 0;
 	o = i >= 0 ? opcode[i].type : -1;
 	
@@ -5783,6 +6140,7 @@ int assemble_input(void) // 0 OK, !0 ERROR
 				else if (strcasecmp((char *)split_parmtr, "R800") == 0) current_cpu = CPU_R800;
 				else if (strcasecmp((char *)split_parmtr, "Z280") == 0) current_cpu = CPU_Z280;
 				else if (strcasecmp((char *)split_parmtr, "8080") == 0) current_cpu = CPU_8080;
+				else if (strcasecmp((char *)split_parmtr, "EZ80") == 0) current_cpu = CPU_EZ80;
 				break;
 			}
 			case PSEUDO_8080:
@@ -5790,7 +6148,23 @@ int assemble_input(void) // 0 OK, !0 ERROR
 				break;
 			case PSEUDO_Z80:
 				current_cpu = CPU_Z80;
+				flag_adl = 0;
 				break;
+			case PSEUDO_EZ80:
+				current_cpu = CPU_EZ80;
+				break;
+			case PSEUDO_ADL:
+			{
+				int val = 1;
+				if (*split_parmtr) {
+					val = eval((char *)split_parmtr);
+				}
+				if (eval_status == 0) {
+					flag_adl = (val != 0);
+					current_cpu = CPU_EZ80;
+				}
+				break;
+			}
 			case PSEUDO_PRINT1:
 				if (pass == 1) printf("%s\n", (char *)split_parmtr);
 				break;
@@ -5832,7 +6206,7 @@ int assemble_input(void) // 0 OK, !0 ERROR
 					sdcc_select_area("_DATA", 0, is_ovr);
 					if (flag_sdcc && current_sdcc_area >= 0) target = sdcc_areas[current_sdcc_area].max_offset;
 				} else {
-					// Área arbitrária: mapear para um COMMON nomeado
+					// Arbitrary area: map to a named COMMON
 					int found = -1;
 					for (int k = 0; k < num_commons; k++) {
 						if (!strcasecmp(common_names[k], area_name)) {
@@ -5860,7 +6234,7 @@ int assemble_input(void) // 0 OK, !0 ERROR
 				char name[16];
 				strncpy(name, (char *)split_parmtr, 15);
 				name[15] = 0;
-				// Remover aspas e parênteses se houver: name('PROG') -> PROG
+				// Remove quotes and parentheses if present: name('PROG') -> PROG
 				char *p1 = strchr(name, '\'');
 				if (p1)
 				{
@@ -6033,6 +6407,8 @@ int assemble_input(void) // 0 OK, !0 ERROR
 			}
 			case PSEUDO_PHASE:
 				phase_target = eval((char *)split_parmtr);
+				if (flag_adl) phase_target &= 0xFFFFFF;
+				else phase_target &= 0xFFFF;
 				phase_seg = eval_res_seg;
 				phase_active = 1;
 				break;
@@ -6090,13 +6466,21 @@ int assemble_input(void) // 0 OK, !0 ERROR
 					FATAL_ERROR(error_too_many_arguments);
 				
 				target = i;
+				if (flag_adl) target &= 0xFFFFFF;
+				else target &= 0xFFFF;
+
 				if (current_seg == SEG_COMMON && current_common >= 0)
 					common_targets[current_common] = target;
 				else
 					seg_target[current_seg] = target;
 				if (target > seg_max[current_seg])
 					seg_max[current_seg] = target;
-				write_rel_switch_seg();
+				
+				if (phase_active)
+					phase_target = target;
+
+				if (pass == 2)
+					write_rel_switch_seg();
 				break;
 			// case OPCODE_COPY4:
 			// NEXTBYTE=oo>>24;
@@ -6138,8 +6522,6 @@ int assemble_input(void) // 0 OK, !0 ERROR
 				if (assemble_opcode(o, oo))
 					return -1;
 			}
-			if (target > SIZEOF_OUTPUT)
-				FATAL_ERROR(error_out_of_memory);
 			if (target > remote)
 				remote = target;
 		}
@@ -6205,7 +6587,7 @@ int assemble(char *s, char *t) // assemble source `s` to target `t`; 0 OK, !0 ER
 
 	for (pass = 1; pass <= 2; pass++) {
 		inputs = params = locals = doubts = chains = dollar = target = origin = remote = recording = conditions = condition0 = 0;
-		min_target = 0xFFFF; max_target = 0;
+		min_target = 0xFFFFFF; max_target = 0;
 		rept_count = 0;
 		memset(rept_remain, 0, sizeof(rept_remain));
 		rel_bits = rel_pos = 0;
@@ -6227,6 +6609,9 @@ int assemble(char *s, char *t) // assemble source `s` to target `t`; 0 OK, !0 ER
 		memset(label_last_seg, 0, LABEL_MAXIMUM * sizeof(int));
 		current_seg = SEG_CSEG; // M80 default: CSEG (not ASEG)
 		current_encoding = default_encoding;
+		current_cpu = CPU_Z80;
+		flag_adl = 0;
+		rel_flag_adl = -1;
 		if (pass == 2 && flag_sdcc)
 			sdcc_select_area("_CODE", 0, 0);
 
@@ -6340,6 +6725,11 @@ int assemble(char *s, char *t) // assemble source `s` to target `t`; 0 OK, !0 ER
 	}
 
 	// Finalize .REL bitstream
+	if (current_cpu == CPU_EZ80) {
+		flag_adl = 1;
+		write_rel_adl_mode();
+	}
+
 	// 1. Escrever tamanhos de segmentos
 	if (seg_target[SEG_DSEG] > 0)
 		write_rel_control(10, seg_target[SEG_DSEG], SEG_ASEG, "", 0);
@@ -6351,7 +6741,7 @@ int assemble(char *s, char *t) // assemble source `s` to target `t`; 0 OK, !0 ER
 		write_rel_control(5, common_sizes[i], SEG_ASEG, common_names[i], 0);
 	}
 
-	// 2. Escrever Símbolos Públicos e Cabeças de Cadeia de Externos
+	// 2. Write Public Symbols and External Chain Heads
 	for (i = 0; i < labels; i++)
 	{
 		char *name = &asciz[label[i]];
@@ -6782,6 +7172,11 @@ int main(int argc, char *argv[])
 		folder[0] = 0;
 	
 	rel_buffer = (unsigned char *)calloc(1, SIZEOF_REL_BUFFER);
+	output = (unsigned char *)calloc(1, SIZEOF_OUTPUT + 512);
+	if (!rel_buffer || !output) {
+		fprintf(stderr, "Error: Could not allocate memory buffers (16MB+)\n");
+		return 1;
+	}
 	rel_buffer_copy = rel_buffer;
 	rel_bits = 0;
 	rel_pos = 0;
