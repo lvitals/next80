@@ -2369,7 +2369,12 @@ int eval(char *s)
 					i = flag_dollar ? dollar : (phase_active ? phase_target : target);
 					seg = flag_dollar ? dollar_seg : (phase_active ? phase_seg : current_seg);
 				}
-				else if (c == '#' || (c == '$' && isnumber(s[1])))
+				else if (c == '#' || (c == '$' && (({ \
+					int _ok = (s[1] != 0); \
+					for (char *_p = s+1; _p < eval_cursor && _ok; _p++) { \
+						char _hc = *_p | 32; \
+						if (!((*_p >= '0' && *_p <= '9') || (_hc >= 'a' && _hc <= 'f'))) _ok = 0; \
+					} _ok; }))))
 					i = eval_hex2i(&s[1], eval_cursor); // prefixed hexadecimal
 				else if (c == '0' && (s[1] | 32) == 'x')
 					i = eval_hex2i(&s[2], eval_cursor); // prefixed hexadecimal C-style
@@ -3744,24 +3749,25 @@ int assemble_filler(int i, int j) // 0 OK, !0 ERROR
 			NEXTBYTE(val);                      \
 	} while (0)
 
-#define FETCH_PARMTR(a, aa, a_seg)           \
-	do                                       \
-	{                                        \
-		t = s;                               \
-		q = 0;                               \
-		while ((c = *t) && (c != ',' || q))  \
-		{                                    \
-			if (c == '"' || c == '\'')       \
-				q = !q;                      \
-			++t;                             \
-		};                                   \
-		*t = 0;                              \
-		if ((a = eval_parmtr(s, &aa)) < 0)   \
-			FATAL_ERROR(error_syntax_error); \
-		a_seg = eval_parmtr_seg;             \
-		if ((*t = c))                        \
-			++t;                             \
-		s = t;                               \
+#define FETCH_PARMTR(a, aa, a_seg)                                           \
+	do                                                                       \
+	{                                                                        \
+		t = s;                                                               \
+		q = 0;                                                               \
+		while ((c = *t) && (c != ',' || q))                                  \
+		{                                                                    \
+			if (c == '"' || c == '\'')                                       \
+				q = !q;                                                      \
+			++t;                                                             \
+		};                                                                   \
+		*t = 0;                                                              \
+		{ char *_trim = t; while (_trim > s && (unsigned char)_trim[-1] <= 32) *--_trim = 0; } \
+		if ((a = eval_parmtr(s, &aa)) < 0)                                   \
+			FATAL_ERROR(error_syntax_error);                                 \
+		a_seg = eval_parmtr_seg;                                             \
+		if ((*t = c))                                                        \
+			++t;                                                             \
+		s = t;                                                               \
 	} while (0)
 #define FATAL_PARMTR FATAL_ERROR(error_improper_argument)
 #define GET_PARMTR_F(a, f) \
@@ -7114,6 +7120,20 @@ int main(int argc, char *argv[])
 					{
 						char *u = (char *)incpath;
 						while ((*u++ = *r++))
+							;
+						u--; // point to null terminator
+						if (u > (char *)incpath && u[-1] != PATHCHAR)
+						{
+							*u++ = PATHCHAR;
+							*u = 0;
+						}
+						r = 0;
+					}
+					else if (i + 1 < final_argc)
+					{
+						char *u = (char *)incpath;
+						char *path_val = final_argv[++i];
+						while ((*u++ = *path_val++))
 							;
 						u--; // point to null terminator
 						if (u > (char *)incpath && u[-1] != PATHCHAR)
