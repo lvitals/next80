@@ -17,7 +17,7 @@ The toolchain includes three tools:
 
 * **Native binary** — no runtime required, runs on any POSIX-compliant system.
 * Almost fully **compatible with [Microsoft MACRO-80](https://en.wikipedia.org/wiki/Microsoft_MACRO-80)** for Z80 code.
-* Produces **absolute and relocatable binary files**. Relocatable files can conform to the MACRO-80/LINK-80 format, or to the SDCC format (XL3) used by [SDCC](https://sdcc.sourceforge.net/).
+* Produces **absolute and relocatable binary files**. Relocatable files can conform to the MACRO-80/LINK-80 format, or to the SDCC format (XL3/XL4) used by [SDCC](https://sdcc.sourceforge.net/).
 * Supports **Z80 undocumented instructions**.
 * Full **Z280 and R800** CPU instruction support.
 * **UTF-8 symbol names** — labels and module names may contain Unicode characters.
@@ -138,7 +138,7 @@ make test
 
 next80 is a port of Nestor80. Relocatable files produced by next80 are binary-compatible with those produced by Nestor80 and LINK-80. The extended relocatable file format (with the `LNKSTOR` header) is supported by both `lk80` and the original Linkstor80.
 
-SDCC XL3 format files can be consumed by both `lk80` and SDLD.
+SDCC XL3/XL4 format files can be consumed by both `lk80` and SDLD.
 
 
 ## License

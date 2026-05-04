@@ -70,13 +70,13 @@ run_bin_test() {
     fi
 }
 
-run_sdcc_basic_test() {
+run_sdcc_basic_test_xl3() {
     [ "$SDCC_AVAILABLE" -eq 0 ] && return
     local t="test_sdcc_output_basic.mac"
     printf "  %-45s" "$t (sdcc basic)"
     local out_rel="$TMP/${t%.mac}.rel"
     local out_bin="$TMP/${t%.mac}.bin"
-    if ! "$N80" "$SCRIPT_DIR/$t" "$out_rel" --build-type sdcc --no-show-banner 2>/dev/null; then
+    if ! "$N80" "$SCRIPT_DIR/$t" "$out_rel" --build-type sdcc-xl3 --no-show-banner 2>/dev/null; then
         echo "FAIL (assembly error)"
         FAIL=$((FAIL + 1))
         return
@@ -114,14 +114,80 @@ run_sdcc_basic_test() {
         FAIL=$((FAIL + 1))
     fi
 }
-
-run_sdcc_reloc_test() {
+run_sdcc_byte_reloc_test_xl3() {
+    [ "$SDCC_AVAILABLE" -eq 0 ] && return
+    local t="test_sdcc_output_byte_reloc.mac"
+    printf "  %-45s" "$t (sdcc byte reloc)"
+    local out_rel="$TMP/${t%.mac}.rel"
+    local out_bin="$TMP/${t%.mac}.bin"
+    if ! "$N80" "$SCRIPT_DIR/$t" "$out_rel" --build-type sdcc-xl3 --no-show-banner 2>/dev/null; then
+        echo "FAIL (assembly error)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    if ! grep -Eq "^R 00 00 00 00 09 03 00 00 89 06 00 00$" "$out_rel"; then
+        echo "FAIL (missing LOW/HIGH relocations)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    if ! "$LK80" "$out_rel" --output-file "$out_bin" 2>/dev/null; then
+        echo "FAIL (link error)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    actual_hex=$(od -v -A n -t x1 "$out_bin" | tr -d ' \n')
+    if [ "$actual_hex" = "0201c9" ]; then
+        echo "PASS"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL (byte mismatch: $actual_hex)"
+        FAIL=$((FAIL + 1))
+    fi
+}
+run_sdcc_external_test_xl3() {
+    [ "$SDCC_AVAILABLE" -eq 0 ] && return
+    local a="test_sdcc_output_ext_a.mac"
+    local b="test_sdcc_output_ext_b.mac"
+    printf "  %-45s" "sdcc external relocation"
+    local out_a="$TMP/${a%.mac}.rel"
+    local out_b="$TMP/${b%.mac}.rel"
+    local out_bin="$TMP/test_sdcc_output_ext.bin"
+    if ! "$N80" "$SCRIPT_DIR/$a" "$out_a" --build-type sdcc-xl3 --no-show-banner 2>/dev/null; then
+        echo "FAIL ($a assembly error)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    if ! "$N80" "$SCRIPT_DIR/$b" "$out_b" --build-type sdcc-xl3 --no-show-banner 2>/dev/null; then
+        echo "FAIL ($b assembly error)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    if ! grep -Eq "^S _helper Def000000$" "$out_a" || ! grep -Eq "^S _helper Ref000000$" "$out_b"; then
+        echo "FAIL (missing symbol definitions)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    if ! "$LK80" "$out_a" "$out_b" --output-file "$out_bin" 2>/dev/null; then
+        echo "FAIL (link error)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    actual_hex=$(od -v -A n -t x1 "$out_bin" | tr -d ' \n')
+    if [ "$actual_hex" = "c9cd0001c9" ]; then
+        echo "PASS"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL (byte mismatch: $actual_hex)"
+        FAIL=$((FAIL + 1))
+    fi
+}
+run_sdcc_reloc_test_xl3() {
     [ "$SDCC_AVAILABLE" -eq 0 ] && return
     local t="test_sdcc_output_reloc.mac"
     printf "  %-45s" "$t (sdcc reloc)"
     local out_rel="$TMP/${t%.mac}.rel"
     local out_bin="$TMP/${t%.mac}.bin"
-    if ! "$N80" "$SCRIPT_DIR/$t" "$out_rel" --build-type sdcc --no-show-banner 2>/dev/null; then
+    if ! "$N80" "$SCRIPT_DIR/$t" "$out_rel" --build-type sdcc-xl3 --no-show-banner 2>/dev/null; then
         echo "FAIL (assembly error)"
         FAIL=$((FAIL + 1))
         return
@@ -146,7 +212,83 @@ run_sdcc_reloc_test() {
     fi
 }
 
-run_sdcc_external_test() {
+run_sdcc_basic_test_xl4() {
+    [ "$SDCC_AVAILABLE" -eq 0 ] && return
+    local t="test_sdcc_output_basic.mac"
+    printf "  %-45s" "$t (sdcc basic)"
+    local out_rel="$TMP/${t%.mac}.rel"
+    local out_bin="$TMP/${t%.mac}.bin"
+    if ! "$N80" "$SCRIPT_DIR/$t" "$out_rel" --build-type sdcc --no-show-banner 2>/dev/null; then
+        echo "FAIL (assembly error)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    for pattern in \
+        "^XL4$" \
+        "^H 3 areas 2 global symbols$" \
+        "^S \.__\.ABS\. Def00000000$" \
+        "^A _CODE size 3 flags 0 addr 0$" \
+        "^S start Def00000000$" \
+        "^T 00 00 00 00 3E 42 C9$" \
+        "^R 00 00 00 00$" \
+        "^A _DATA size 2 flags 0 addr 0$" \
+        "^T 00 00 00 00 11 22$" \
+        "^A CUSTOM size 2 flags 4 addr 0$" \
+        "^T 00 00 00 00 33 44$"
+    do
+        if ! grep -Eq "$pattern" "$out_rel"; then
+            echo "FAIL (missing XL3 line: $pattern)"
+            FAIL=$((FAIL + 1))
+            return
+        fi
+    done
+    if ! "$LK80" "$out_rel" --output-file "$out_bin" 2>/dev/null; then
+        echo "FAIL (link error)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    actual_hex=$(od -v -A n -t x1 "$out_bin" | tr -d ' \n')
+    if [ "$actual_hex" = "3e42c911223344" ]; then
+        echo "PASS"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL (byte mismatch: $actual_hex)"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+run_sdcc_reloc_test_xl4() {
+    [ "$SDCC_AVAILABLE" -eq 0 ] && return
+    local t="test_sdcc_output_reloc.mac"
+    printf "  %-45s" "$t (sdcc reloc)"
+    local out_rel="$TMP/${t%.mac}.rel"
+    local out_bin="$TMP/${t%.mac}.bin"
+    if ! "$N80" "$SCRIPT_DIR/$t" "$out_rel" --build-type sdcc --no-show-banner 2>/dev/null; then
+        echo "FAIL (assembly error)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    if ! grep -Eq "^R 00 00 00 00 00 04 00 00$" "$out_rel"; then
+        echo "FAIL (missing internal word relocation)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    if ! "$LK80" "$out_rel" --output-file "$out_bin" 2>/dev/null; then
+        echo "FAIL (link error)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    actual_hex=$(od -v -A n -t x1 "$out_bin" | tr -d ' \n')
+    if [ "$actual_hex" = "030100c9" ]; then
+        echo "PASS"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL (byte mismatch: $actual_hex)"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+run_sdcc_external_test_xl4() {
     [ "$SDCC_AVAILABLE" -eq 0 ] && return
     local a="test_sdcc_output_ext_a.mac"
     local b="test_sdcc_output_ext_b.mac"
@@ -164,7 +306,7 @@ run_sdcc_external_test() {
         FAIL=$((FAIL + 1))
         return
     fi
-    if ! grep -Eq "^S _helper Def000000$" "$out_a" || ! grep -Eq "^S _helper Ref000000$" "$out_b"; then
+    if ! grep -Eq "^S _helper Def00000000$" "$out_a" || ! grep -Eq "^S _helper Ref00000000$" "$out_b"; then
         echo "FAIL (missing symbol definitions)"
         FAIL=$((FAIL + 1))
         return
@@ -184,7 +326,7 @@ run_sdcc_external_test() {
     fi
 }
 
-run_sdcc_byte_reloc_test() {
+run_sdcc_byte_reloc_test_xl4() {
     [ "$SDCC_AVAILABLE" -eq 0 ] && return
     local t="test_sdcc_output_byte_reloc.mac"
     printf "  %-45s" "$t (sdcc byte reloc)"
@@ -195,7 +337,7 @@ run_sdcc_byte_reloc_test() {
         FAIL=$((FAIL + 1))
         return
     fi
-    if ! grep -Eq "^R 00 00 00 00 09 03 00 00 89 06 00 00$" "$out_rel"; then
+    if ! grep -Eq "^R 00 00 00 00 09 04 00 00 89 08 00 00$" "$out_rel"; then
         echo "FAIL (missing LOW/HIGH relocations)"
         FAIL=$((FAIL + 1))
         return
@@ -312,10 +454,157 @@ run_bin_test "test_expr_associativity.mac" "4c1b0314"
 
 echo ""
 echo "--- SDCC output tests ---"
-run_sdcc_basic_test
-run_sdcc_reloc_test
-run_sdcc_external_test
-run_sdcc_byte_reloc_test
+run_sdcc_basic_test_xl3
+run_sdcc_reloc_test_xl3
+run_sdcc_external_test_xl3
+run_sdcc_byte_reloc_test_xl3
+
+run_sdcc_basic_test_xl3() {
+    [ "$SDCC_AVAILABLE" -eq 0 ] && return
+    local t="test_sdcc_output_basic.mac"
+    printf "  %-45s" "$t (sdcc basic)"
+    local out_rel="$TMP/${t%.mac}.rel"
+    local out_bin="$TMP/${t%.mac}.bin"
+    if ! "$N80" "$SCRIPT_DIR/$t" "$out_rel" --build-type sdcc-xl3 --no-show-banner 2>/dev/null; then
+        echo "FAIL (assembly error)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    for pattern in \
+        "^XL3$" \
+        "^H 3 areas 2 global symbols$" \
+        "^S \.__\.ABS\. Def000000$" \
+        "^A _CODE size 3 flags 0 addr 0$" \
+        "^S start Def000000$" \
+        "^T 00 00 00 3E 42 C9$" \
+        "^R 00 00 00 00$" \
+        "^A _DATA size 2 flags 0 addr 0$" \
+        "^T 00 00 00 11 22$" \
+        "^A CUSTOM size 2 flags 4 addr 0$" \
+        "^T 00 00 00 33 44$"
+    do
+        if ! grep -Eq "$pattern" "$out_rel"; then
+            echo "FAIL (missing XL3 line: $pattern)"
+            FAIL=$((FAIL + 1))
+            return
+        fi
+    done
+    if ! "$LK80" "$out_rel" --output-file "$out_bin" 2>/dev/null; then
+        echo "FAIL (link error)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    actual_hex=$(od -v -A n -t x1 "$out_bin" | tr -d ' \n')
+    if [ "$actual_hex" = "3e42c911223344" ]; then
+        echo "PASS"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL (byte mismatch: $actual_hex)"
+        FAIL=$((FAIL + 1))
+    fi
+}
+run_sdcc_byte_reloc_test_xl3() {
+    [ "$SDCC_AVAILABLE" -eq 0 ] && return
+    local t="test_sdcc_output_byte_reloc.mac"
+    printf "  %-45s" "$t (sdcc byte reloc)"
+    local out_rel="$TMP/${t%.mac}.rel"
+    local out_bin="$TMP/${t%.mac}.bin"
+    if ! "$N80" "$SCRIPT_DIR/$t" "$out_rel" --build-type sdcc-xl3 --no-show-banner 2>/dev/null; then
+        echo "FAIL (assembly error)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    if ! grep -Eq "^R 00 00 00 00 09 03 00 00 89 06 00 00$" "$out_rel"; then
+        echo "FAIL (missing LOW/HIGH relocations)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    if ! "$LK80" "$out_rel" --output-file "$out_bin" 2>/dev/null; then
+        echo "FAIL (link error)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    actual_hex=$(od -v -A n -t x1 "$out_bin" | tr -d ' \n')
+    if [ "$actual_hex" = "0201c9" ]; then
+        echo "PASS"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL (byte mismatch: $actual_hex)"
+        FAIL=$((FAIL + 1))
+    fi
+}
+run_sdcc_external_test_xl3() {
+    [ "$SDCC_AVAILABLE" -eq 0 ] && return
+    local a="test_sdcc_output_ext_a.mac"
+    local b="test_sdcc_output_ext_b.mac"
+    printf "  %-45s" "sdcc external relocation"
+    local out_a="$TMP/${a%.mac}.rel"
+    local out_b="$TMP/${b%.mac}.rel"
+    local out_bin="$TMP/test_sdcc_output_ext.bin"
+    if ! "$N80" "$SCRIPT_DIR/$a" "$out_a" --build-type sdcc-xl3 --no-show-banner 2>/dev/null; then
+        echo "FAIL ($a assembly error)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    if ! "$N80" "$SCRIPT_DIR/$b" "$out_b" --build-type sdcc-xl3 --no-show-banner 2>/dev/null; then
+        echo "FAIL ($b assembly error)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    if ! grep -Eq "^S _helper Def000000$" "$out_a" || ! grep -Eq "^S _helper Ref000000$" "$out_b"; then
+        echo "FAIL (missing symbol definitions)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    if ! "$LK80" "$out_a" "$out_b" --output-file "$out_bin" 2>/dev/null; then
+        echo "FAIL (link error)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    actual_hex=$(od -v -A n -t x1 "$out_bin" | tr -d ' \n')
+    if [ "$actual_hex" = "c9cd0001c9" ]; then
+        echo "PASS"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL (byte mismatch: $actual_hex)"
+        FAIL=$((FAIL + 1))
+    fi
+}
+run_sdcc_reloc_test_xl3() {
+    [ "$SDCC_AVAILABLE" -eq 0 ] && return
+    local t="test_sdcc_output_reloc.mac"
+    printf "  %-45s" "$t (sdcc reloc)"
+    local out_rel="$TMP/${t%.mac}.rel"
+    local out_bin="$TMP/${t%.mac}.bin"
+    if ! "$N80" "$SCRIPT_DIR/$t" "$out_rel" --build-type sdcc-xl3 --no-show-banner 2>/dev/null; then
+        echo "FAIL (assembly error)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    if ! grep -Eq "^R 00 00 00 00 00 03 00 00$" "$out_rel"; then
+        echo "FAIL (missing internal word relocation)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    if ! "$LK80" "$out_rel" --output-file "$out_bin" 2>/dev/null; then
+        echo "FAIL (link error)"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    actual_hex=$(od -v -A n -t x1 "$out_bin" | tr -d ' \n')
+    if [ "$actual_hex" = "030100c9" ]; then
+        echo "PASS"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL (byte mismatch: $actual_hex)"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+run_sdcc_basic_test_xl4
+run_sdcc_reloc_test_xl4
+run_sdcc_external_test_xl4
+run_sdcc_byte_reloc_test_xl4
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

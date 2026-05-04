@@ -131,6 +131,7 @@ int seg_max[4] = {0, 0, 0, 0};
 int target, origin, remote, dollar, dollar_seg, flag_dollar = 0, flag_z = 1;
 int min_target = 0xFFFFFF, max_target = 0;
 int flag_sdcc = 0;
+int flag_sdcc_xl4 = 1;
 int eval_res_seg, eval_res_lbl;
 int entry_point = 0, entry_seg = SEG_ASEG;
 int phase_active = 0, phase_target = 0, phase_seg = SEG_ASEG;
@@ -681,16 +682,18 @@ static int sdcc_write_output(const char *source_name, const char *target_name)
 		if (!(f = fopen(target_name, "w")))
 			FATAL_ERROR(error_cannot_create_file);
 
-	fprintf(f, "XL3\n");
+	int is_xl4 = flag_sdcc_xl4;
+
+	fprintf(f, "XL%d\n", is_xl4 ? 4 : 3);
 	fprintf(f, "H %X areas %X global symbols\n", sdcc_area_count, public_count + external_count + 1);
-	fprintf(f, "S .__.ABS. Def000000\n");
+	fprintf(f, "S .__.ABS. Def%0*X\n", is_xl4 ? 8 : 6, 0);
 
 	int current_symbol_index = 1;
 	for (int i = 0; i < labels; i++) {
 		if ((label_flag[i] & LBL_EXTRN) && strcmp(&asciz[label[i]], symbol_debug)) {
 			if (sdcc_symbol_index_by_label)
 				sdcc_symbol_index_by_label[i] = current_symbol_index++;
-			fprintf(f, "S %s Ref000000\n", &asciz[label[i]]);
+			fprintf(f, "S %s Ref%0*X\n", &asciz[label[i]], is_xl4 ? 8 : 6, 0);
 		}
 	}
 
@@ -705,7 +708,7 @@ static int sdcc_write_output(const char *source_name, const char *target_name)
 			if ((label_flag[i] & LBL_PUBLIC) && label_sdcc_area[i] == ai && strcmp(&asciz[label[i]], symbol_debug)) {
 				if (sdcc_symbol_index_by_label)
 					sdcc_symbol_index_by_label[i] = current_symbol_index++;
-				fprintf(f, "S %s Def%06X\n", &asciz[label[i]], value[i] & 0xFFFFFF);
+				fprintf(f, "S %s Def%0*X\n", &asciz[label[i]], is_xl4 ? 8 : 6, value[i] & 0xFFFFFFFF);
 			}
 		}
 
@@ -721,11 +724,11 @@ static int sdcc_write_output(const char *source_name, const char *target_name)
 				int represented = 1;
 				for (int ri = 0; ri < area->reloc_count; ri++) {
 					if (area->relocs[ri].offset == pos && (area->relocs[ri].flags & 0x01) && (area->relocs[ri].flags & 0x08)) {
-						represented = 3;
+						represented = is_xl4 ? 4 : 3;
 						break;
 					}
 					if (area->relocs[ri].offset == pos && (area->relocs[ri].flags & 0x10)) {
-						represented = 3;
+						represented = is_xl4 ? 4 : 3;
 						break;
 					}
 				}
@@ -735,7 +738,11 @@ static int sdcc_write_output(const char *source_name, const char *target_name)
 				represented_count += represented;
 			}
 			int end = pos;
-			fprintf(f, "T %02X %02X 00", start & 0xFF, (start >> 8) & 0xFF);
+			if (is_xl4) {
+				fprintf(f, "T %02X %02X %02X %02X", start & 0xFF, (start >> 8) & 0xFF, (start >> 16) & 0xFF, (start >> 24) & 0xFF);
+			} else {
+				fprintf(f, "T %02X %02X 00", start & 0xFF, (start >> 8) & 0xFF);
+			}
 			for (int j = start; j < end; j++) {
 				SdccReloc *byte_reloc = NULL;
 				for (int ri = 0; ri < area->reloc_count; ri++) {
@@ -750,11 +757,13 @@ static int sdcc_write_output(const char *source_name, const char *target_name)
 							byte_reloc->raw_value & 0xFF,
 							(byte_reloc->raw_value >> 8) & 0xFF,
 							(byte_reloc->raw_value >> 16) & 0xFF);
+						if (is_xl4) fprintf(f, " %02X", (byte_reloc->raw_value >> 24) & 0xFF);
 					} else {
 						fprintf(f, " %02X %02X %02X",
 							byte_reloc->raw_value & 0xFF,
 							(byte_reloc->raw_value >> 8) & 0xFF,
 							(byte_reloc->flags & 0x02) && byte_reloc->raw_value > 0x7FFF ? 0xFF : 0x00);
+						if (is_xl4) fprintf(f, " %02X", (byte_reloc->flags & 0x02) && byte_reloc->raw_value > 0x7FFF ? 0xFF : 0x00);
 					}
 				} else {
 					fprintf(f, " %02X", area->data[j]);
@@ -764,12 +773,12 @@ static int sdcc_write_output(const char *source_name, const char *target_name)
 			for (int ri = 0; ri < area->reloc_count; ri++) {
 				SdccReloc *reloc = &area->relocs[ri];
 				if (reloc->offset >= start && reloc->offset < end) {
-					int t_offset = 3;
+					int t_offset = is_xl4 ? 4 : 3;
 					for (int j = start; j < reloc->offset; j++) {
 						int represented = 1;
 						for (int rj = 0; rj < area->reloc_count; rj++) {
 							if (area->relocs[rj].offset == j && (area->relocs[rj].flags & 0x01) && (area->relocs[rj].flags & 0x08)) {
-								represented = 3;
+								represented = is_xl4 ? 4 : 3;
 								break;
 							}
 						}
@@ -6991,6 +7000,17 @@ int main(int argc, char *argv[])
 					else if (strcasecmp(bt, "sdcc") == 0) {
 						flag_z = 1;
 						flag_sdcc = 1;
+						flag_sdcc_xl4 = 1;
+					}
+					else if (strcasecmp(bt, "sdcc-xl4") == 0) {
+						flag_z = 1;
+						flag_sdcc = 1;
+						flag_sdcc_xl4 = 1;
+					}
+					else if (strcasecmp(bt, "sdcc-xl3") == 0) {
+						flag_z = 1;
+						flag_sdcc = 1;
+						flag_sdcc_xl4 = 0;
 					}
 				}
 				else if (strcmp(r, "--output-file-case") == 0 && i + 1 < final_argc)
