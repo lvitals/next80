@@ -8,7 +8,7 @@ The toolchain ships three tools:
 
 | Tool | Replaces | Purpose |
 |------|----------|---------|
-| **n80** | MACRO-80 / N80 | Z80/8080/R800/Z280 assembler |
+| **n80** | MACRO-80 / N80 | Z80/8080/R800/Z280/EZ80 assembler |
 | **lk80** | LINK-80 / Linkstor80 | Relocatable linker |
 | **lb80** | LIB-80 / Libstor80 | Library manager |
 
