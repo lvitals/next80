@@ -230,7 +230,7 @@ next80 is wire-compatible with Nestor80 and LINK-80:
 
 * Relocatable `.rel` files produced by `n80` are accepted by the original Linkstor80, by LINK-80, and by `lk80`.
 * Library `.lib` files are interchangeable between `lb80` and LIB-80.
-* SDCC XL3 files produced by `n80 --build-type sdcc` are accepted by both `lk80` and SDLD.
+* SDCC XL3/XL4 files produced by `n80 --build-type sdcc`, `--build-type sdcc-xl3` or `--build-type sdcc-xl4` are accepted by both `lk80` and SDLD.
 
 The extended relocatable file format (files starting with the `LNKSTOR` header) is supported by `lk80` just as Linkstor80 supports it.
 

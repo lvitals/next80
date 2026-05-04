@@ -7148,7 +7148,7 @@ int main(int argc, char *argv[])
 		printf("  n80 <source-file> [output-file] [options...]\n\n");
 		printf("Assembler Options:\n");
 		printf("  -o <file>                Name of the output file\n");
-		printf("  --build-type <type>      Output format: abs (absolute), rel (relocatable, default), sdcc\n");
+		printf("  --build-type <type>      Output format: abs (absolute), rel (relocatable, default), sdcc, sdcc-xl3, sdcc-xl4\n");
 		printf("  -z                       Absolute output (alias for --build-type abs)\n");
 		printf("  -d<label>[=<val>]        Define a symbol (default value is 1)\n");
 		printf("  --define-symbols <list>  Comma-separated list of symbols (SYM or SYM=VAL)\n");
