@@ -105,6 +105,8 @@ echo "Assembling test sources..."
 "$N80" "$SCRIPT_DIR/test_z280_epum.mac"      "$TMP/test_z280_epum.rel"       --build-type rel --no-show-banner
 "$N80" "$SCRIPT_DIR/test_z280_mepu.mac"      "$TMP/test_z280_mepu.rel"       --build-type rel --no-show-banner
 "$N80" "$SCRIPT_DIR/test_z280_tsti.mac"      "$TMP/test_z280_tsti.rel"       --build-type rel --no-show-banner
+"$N80" "$SCRIPT_DIR/test_ext_chain_size_a.mac" "$TMP/test_ext_chain_size_a.rel" --build-type rel --no-show-banner
+"$N80" "$SCRIPT_DIR/test_ext_chain_size_b.mac" "$TMP/test_ext_chain_size_b.rel" --build-type rel --no-show-banner
 
 "$LK80" "$TMP/test_reloc.rel" "$TMP/test_reloc_2.rel" -o "$TMP/linked.bin" --code 100h
 "$LK80" "$TMP/test_escape.rel"       -o "$TMP/test_escape.bin"       --output-format bin
@@ -115,8 +117,10 @@ echo "Assembling test sources..."
 "$LK80" "$TMP/test_z280_epum.rel"    -o "$TMP/test_z280_epum.bin"    --output-format bin
 "$LK80" "$TMP/test_z280_mepu.rel"    -o "$TMP/test_z280_mepu.bin"    --output-format bin
 "$LK80" "$TMP/test_z280_tsti.rel"    -o "$TMP/test_z280_tsti.bin"    --output-format bin
+"$LK80" "$TMP/test_ext_chain_size_a.rel" "$TMP/test_ext_chain_size_b.rel" -o "$TMP/test_ext_chain_size.bin" --code 100h
 
 verify_bin "test_escape"       "$TMP/test_escape.bin"       "c2a9f09f9880410a0d"
+verify_bin "test_ext_chain_size" "$TMP/test_ext_chain_size.bin" "cd040141c9"
 verify_bin "test_z280_cpw"     "$TMP/test_z280_cpw.bin"     "edc7edd7ede7ddede7fdede7edf7ddedc7fdedc70100fdedd7feffddedf70300ddedd73412fdedf73412"
 verify_bin "test_z280_epuf"    "$TMP/test_z280_epuf.bin"    "ed97"
 verify_bin "test_z280_epui"    "$TMP/test_z280_epui.bin"    "ed9f"

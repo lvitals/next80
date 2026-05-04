@@ -516,7 +516,15 @@ unsigned int write_rel_addr(unsigned int addr, int type)
 	{
 		// For externals, use add_external_usage to chain the relocations.
 		// add_external_usage now handles the offset (emits Type 9 if needed).
-		return add_external_usage(eval_res_lbl, addr);
+		unsigned int prev_addr = add_external_usage(eval_res_lbl, addr);
+		if (current_seg == SEG_COMMON && current_common >= 0) {
+			if (target + size > common_sizes[current_common])
+				common_sizes[current_common] = target + size;
+		}
+		if (target + size > seg_max[current_seg])
+			seg_max[current_seg] = target + size;
+		seg_target[current_seg] += size;
+		return prev_addr;
 	}
 	else
 	{

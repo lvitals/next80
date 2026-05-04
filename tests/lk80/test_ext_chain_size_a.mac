@@ -1,0 +1,6 @@
+	extrn helper
+
+	call helper
+	db "A"
+
+	end

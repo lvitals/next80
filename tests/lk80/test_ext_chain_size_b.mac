@@ -1,0 +1,6 @@
+	public helper
+
+helper:
+	ret
+
+	end
